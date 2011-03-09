@@ -24,22 +24,75 @@ Changelog:
 
 */
 
-if (! defined('BASEPATH') && ! defined('EXT')) exit('No direct script access allowed');
+if (!defined('APP_VER') || !defined('BASEPATH')) { exit('No direct script access allowed'); }
+
+// ---------------------------------------------
+// 	Include config file
+//	(I get the version and other info from config.php, so everything stays in sync.)
+// ---------------------------------------------
+
+require_once PATH_THIRD.'category_sorted_entries/config.php';
+
+// ---------------------------------------------
+//	Helper functions offloaded to a second file, for neatness' sake.
+// ---------------------------------------------
+
+require_once PATH_THIRD.'category_sorted_entries/helpers.php';
+
+// ---------------------------------------------
+//	Provide plugin info to EE
+// ---------------------------------------------
 
 $plugin_info = array(
-						'pi_name'			=> 'RogEE Category Sorted Entries',
-						'pi_version'		=> '1.0.0',
-						'pi_author'			=> 'Michael Rog',
-						'pi_author_url'		=> 'http://michaelrog.com/ee',
-						'pi_description'	=> 'Like the built-in EE Category Archive, but way mo\' better (with additional variables and parameters for added control.)',
-						'pi_usage'			=> Category_sorted_entries::usage()
-					);
+	'pi_name'			=> ROGEE_CSE_NAME,
+	'pi_version'		=> ROGEE_CSE_VERSION,
+	'pi_author'			=> "Michael Rog",
+	'pi_author_url'		=> ROGEE_CSE_DOCS,
+	'pi_description'	=> 'Like the built-in EE Category Archive, but way mo\' better (with additional variables and parameters for added control.)',
+	'pi_usage'			=> Category_sorted_entries::usage()
+);
 
-/** ------------------------------------------------------------------------
-/**  Category_sorted_entries
-/** ------------------------------------------------------------------------*/
+// ---------------------------------------------
+//	Okay, here goes nothing...
+// ---------------------------------------------
+
+/**
+ * RogEE Category Sorted Entries
+ *
+ * @package		RogEE Category Sorted Entries
+ * @author		Michael Rog <michael@michaelrog.com>
+ * @copyright	Copyright (c) 2011 Michael Rog
+ * @link		http://michaelrog.com/ee/category-sorted-entries
+ */
 
 class Category_sorted_entries {
+
+	/**
+	* Local reference to the ExpressionEngine super object
+	*
+	* @access private
+	* @var object
+	*/
+	private $EE;
+	
+	/**
+	* Instance of the helper class
+	*
+	* @access private
+	* @var object
+	*/
+	private $H;	
+
+	/**
+	* Plugin return data
+	*
+	* @access public
+	* @var string
+	*/
+	public $return_data;
+
+
+	
 
 
 	var $limit	= '100';	// Default maximum query results if not specified.
@@ -47,7 +100,6 @@ class Category_sorted_entries {
 	// These variable are all set dynamically
 
 	var $query;
-	var $return_data			= '';	 	// Final data
 	var $catfields				= array();
 	var $reserved_cat_segment 	= '';
 	var $use_category_names		= FALSE;
@@ -74,17 +126,37 @@ class Category_sorted_entries {
 
 	// Misc. - Class variable usable by extensions
 	var $misc					= FALSE;
+
+
+
+
+	/**
+	* ==============================================
+	* Constructors
+	* ==============================================
+	*
+	* @access      public
+	* @return      null
+	*/
+	function Category_sorted_entries($str="") {
 	
-
-	/** ------------------------------------------------------------------------
-	/**  Constructor
-	/** ------------------------------------------------------------------------*/
-
-	function Category_sorted_entries($str='')
+		$this->__construct($str);
+	
+	} // END Category_sorted_entries()
+	
+	public function __construct($str="")
 	{
+	
+		// ---------------------------------------------
+		//	Establish local references to EE object and helper class
+		// ---------------------------------------------
 
-		// Make a local reference to the ExpressionEngine super object
 		$this->EE =& get_instance();
+		$this->H = new Category_sorted_entries_helpers;
+		
+		// ---------------------------------------------
+		//	Establish some default settings
+		// ---------------------------------------------
 
 		$this->p_limit = $this->limit;
 
@@ -95,16 +167,28 @@ class Category_sorted_entries {
 			$this->use_category_names	= $this->EE->config->item("use_category_name");
 			$this->reserved_cat_segment	= $this->EE->config->item("reserved_category_word");
 		}
+		
+		$this->enable = array(
+			'categories' => TRUE,
+			'category_fields' => TRUE,
+			'custom_fields' => TRUE,
+			'member_data' => TRUE,
+			'pagination' => TRUE,
+			);
 
 		// a number tags utilize the disable= parameter, set it here
 		if (isset($this->EE->TMPL) && is_object($this->EE->TMPL))
 		{
-			$this->_fetch_disable_param();
+			$this->enable = $this->H->fetch_disable_param($this->enable);
 		}
 
 		$this->return_data = $this->category_archive();
 
-	} // END Category_sorted_entries() constructor
+	} // END __construct()
+
+
+
+
 
 
 	/** ------------------------------------------------------------------------
@@ -1351,40 +1435,7 @@ class Category_sorted_entries {
 			$this->category_list[] = $tab."</ul>\n";
 	}
 
-	// ------------------------------------------------------------------------
 
-
-	/**
-	  *  Fetch Disable Parameter
-	  */
-	function _fetch_disable_param()
-	{
-		$this->enable = array(
-							'categories' 		=> TRUE,
-							'category_fields'	=> TRUE,
-							'custom_fields'		=> TRUE,
-							'member_data'		=> TRUE,
-							'pagination' 		=> TRUE,
-							);
-
-		if ($disable = $this->EE->TMPL->fetch_param('disable'))
-		{
-			if (strpos($disable, '|') !== FALSE)
-			{
-				foreach (explode("|", $disable) as $val)
-				{
-					if (isset($this->enable[$val]))
-					{
-						$this->enable[$val] = FALSE;
-					}
-				}
-			}
-			elseif (isset($this->enable[$disable]))
-			{
-				$this->enable[$disable] = FALSE;
-			}
-		}
-	}
 
 	// ------------------------------------------------------------------------
 
@@ -1453,6 +1504,8 @@ class Category_sorted_entries {
 		return $buffer;
 		
 	} // END usage()
+
+
 
 } // END Category_sorted_entries class
 
