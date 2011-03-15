@@ -12,17 +12,12 @@
 class Category_sorted_entries_helpers {
 
 	private $EE;
+	private $dev_on = TRUE;
 
 	public function __construct()
 	{
 		$this->EE =& get_instance();
-	}
-	
-	public function _test($str = "test string!")
-	{
-		return $str ;
-	}
-	
+	}	
 	
 	
 	/**
@@ -30,9 +25,9 @@ class Category_sorted_entries_helpers {
 	*
 	* @access private
 	* @param string: String like 'not 1|2|3' or '40|15|34|234'
-	* @return array: [0] = array of ids, [1] = boolean whether to include or exclude (TRUE means include, FALSE means exclude)
+	* @return array: [0] = array of items, [1] = boolean whether to include or exclude (TRUE means include, FALSE means exclude)
 	*/	
-	public function fetch_list_param($str = "")
+	public function explode_list_param($str = "")
 	{
 
 		$in = TRUE;
@@ -54,7 +49,7 @@ class Category_sorted_entries_helpers {
 		// Return two values in an array
 		// --------------------------------------
 
-		return array(explode('|', $str), $in);
+		return array(explode('|', trim($str)), $in);
 	}
 	
 	
@@ -64,7 +59,7 @@ class Category_sorted_entries_helpers {
 	*
 	* @access private
 	* @param array: Array containing current/default enable/disable values
-	* @return array: Array containing new enable/disable values
+	* @return array: Array containing updated enable/disable values
 	*/	
 	public function fetch_disable_param($enabled = array())
 	{
@@ -81,6 +76,50 @@ class Category_sorted_entries_helpers {
 		return $enabled ;
 	}
 	
+
+	/**
+	 * ==============================================
+	 * Debug 
+	 * ==============================================
+	 *
+	 * This method places a string into my debug log. For developemnt purposes.
+	 *
+	 * @access	private
+	 * @param	string: The debug string
+	 * @return	string: The debug string parameter
+	 *//* */
+	public function debug($debug_statement = "")
+	{
+		
+		if ($this->dev_on)
+		{
+			
+			if (! $this->EE->db->table_exists('rogee_debug_log'))
+			{
+				$this->EE->load->dbforge();
+				$this->EE->dbforge->add_field(array(
+					'event_id'    => array('type' => 'INT', 'constraint' => 5, 'unsigned' => TRUE, 'auto_increment' => TRUE),
+					'class'    => array('type' => 'VARCHAR', 'constraint' => 50),
+					'event'   => array('type' => 'VARCHAR', 'constraint' => 200),
+					'timestamp'  => array('type' => 'INT', 'constraint' => 20, 'unsigned' => TRUE)
+				));
+				$this->EE->dbforge->add_key('event_id', TRUE);
+				$this->EE->dbforge->create_table('rogee_debug_log');
+			}
+			
+			$log_item = array('class' => __CLASS__, 'event' => $debug_statement, 'timestamp' => time());
+			$this->EE->db->set($log_item);
+			$this->EE->db->insert('rogee_debug_log');
+		
+			$this->EE->TMPL->log_item( __CLASS__ . ": " . $debug_statement);
+		
+		}
+		
+		return $debug_statement;
+		
+	} // END debug() */
+
+
 	
 	
 } // END Category_sorted_entries class

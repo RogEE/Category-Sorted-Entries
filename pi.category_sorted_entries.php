@@ -6,7 +6,7 @@
 RogEE "Category Sorted Entries"
 a plug-in for ExpressionEngine 2
 by Michael Rog
-v1.0.0
+v2.a.1
 
 Please e-mail me with questions, feedback, suggestions, bugs, etc.
 >> michael@michaelrog.com
@@ -81,7 +81,7 @@ class Category_sorted_entries {
 	* @access private
 	* @var object
 	*/
-	private $H;	
+	private $H;
 
 	/**
 	* Plugin return data
@@ -89,21 +89,74 @@ class Category_sorted_entries {
 	* @access public
 	* @var string
 	*/
-	public $return_data;
-
-
+	public $return_data = "";
 	
+	/**
+	* Parameter data from template (NOT including "disable" param)
+	*
+	* @access private
+	* @var string
+	*/
+	private $params = array();
+	
+	/**
+	* Enabled features, to be altered by the disable="" parameter
+	*
+	* @access private
+	* @var array
+	*/
+	private $enable = array();
 
+	/**
+	* Big complicated object containing entry data from SQL query
+	*
+	* @access private
+	* @var object
+	*/
+	private $entry_data_q;
+	
+	/**
+	* Big complicated object containing category data from SQL query
+	*
+	* @access private
+	* @var object
+	*/
+	private $category_data_q;
 
-	var $limit	= '100';	// Default maximum query results if not specified.
+	/**
+	* Big complicated objects containing category field info/data from SQL query
+	*
+	* @access private
+	* @var object
+	*/
+	private $category_fields_data_q;
+	private $category_fields_info_q;
+	
+	/**
+	* Debug switch
+	*
+	* @access private
+	* @var boolean
+	*/
+	private $debug_on = TRUE;
 
-	// These variable are all set dynamically
+	/**
+	* Other misc variables
+	*/
 
-	var $query;
-	var $catfields				= array();
+	var $entries_list = array();
+	var $entries_exclude_list = array();
+	
+	var $group_id;
+	var $channel_id;
+	
+	var $category_fields_info = array();
+
+	// These are used for creating URIs
+
 	var $reserved_cat_segment 	= '';
 	var $use_category_names		= FALSE;
-	var $enable					= array();	// modified by various tags with disable= parameter
+
 
 	// These are used with the nested category trees
 
@@ -113,20 +166,10 @@ class Category_sorted_entries {
 	var $temp_array				= array();
 	var $category_count			= 0;
 
-	// These are used in filtering entries
+
+	// TRASH THESE
 	
-	var $entries_list	= array();
-	var $filter_by_entries	= FALSE;
-	var $entries_not_list	= array();
-	var $filter_by_entries_not	= FALSE;	
-
-	// SQL Caching
-
-	var $sql_cache_dir			= 'sql_cache/';
-
-	// Misc. - Class variable usable by extensions
-	var $misc					= FALSE;
-
+	var $catfields = array();
 
 
 
@@ -138,7 +181,7 @@ class Category_sorted_entries {
 	* @access      public
 	* @return      null
 	*/
-	function Category_sorted_entries($str="") {
+	public function Category_sorted_entries($str="") {
 	
 		$this->__construct($str);
 	
@@ -153,38 +196,392 @@ class Category_sorted_entries {
 
 		$this->EE =& get_instance();
 		$this->H = new Category_sorted_entries_helpers;
+
+		// ---------------------------------------------
+		//	This plugin is only meant to be called from a template (not as a text processor).
+		// ---------------------------------------------
 		
-		// ---------------------------------------------
-		//	Establish some default settings
-		// ---------------------------------------------
-
-		$this->p_limit = $this->limit;
-
-		$this->query_string = ($this->EE->uri->page_query_string != '') ? $this->EE->uri->page_query_string : $this->EE->uri->query_string;
-
-		if ($this->EE->config->item("use_category_name") == 'y' && $this->EE->config->item("reserved_category_word") != '')
+		if (! isset($this->EE->TMPL) || ! is_object($this->EE->TMPL))
 		{
-			$this->use_category_names	= $this->EE->config->item("use_category_name");
-			$this->reserved_cat_segment	= $this->EE->config->item("reserved_category_word");
+			$this->return_data = "";
 		}
-		
-		$this->enable = array(
-			'categories' => TRUE,
-			'category_fields' => TRUE,
-			'custom_fields' => TRUE,
-			'member_data' => TRUE,
-			'pagination' => TRUE,
-			);
-
-		// a number tags utilize the disable= parameter, set it here
-		if (isset($this->EE->TMPL) && is_object($this->EE->TMPL))
+		else
 		{
+			
+			// ---------------------------------------------
+			//	Default settings: Category trigger words / cat. name vs. cat ID
+			// ---------------------------------------------
+	
+			if ($this->EE->config->item("use_category_name") == 'y' && $this->EE->config->item("reserved_category_word") != '')
+			{
+				$this->use_category_names	= $this->EE->config->item("use_category_name");
+				$this->reserved_cat_segment	= $this->EE->config->item("reserved_category_word");
+			}
+			
+			// ---------------------------------------------
+			//	By default, everything is enabled.
+			// ---------------------------------------------
+			
+			$this->enable = array(
+				'category_fields' => TRUE,
+				'custom_fields' => TRUE,
+				'member_data' => TRUE
+				);
+
 			$this->enable = $this->H->fetch_disable_param($this->enable);
-		}
 
-		$this->return_data = $this->category_archive();
+			// ---------------------------------------------
+			//	Fetch and process params once at the beginning, so we can use them later without reinvoking the TMPL functions.
+			//	 - "group_id" (deprecated) is supported if "display_by_group" is not supplied
+			//	 - "order_by" is supported if "orderby" is not supplied
+			//	 - "disable" param is captured here for debugging, but $enable is set by a helper (i.e. not with this data)
+			// ---------------------------------------------
+
+			$this->params = array(
+				'channel' => $this->EE->TMPL->fetch_param("channel"),
+				'site_id' => ( $this->EE->TMPL->fetch_param("site_id") ? $this->EE->TMPL->fetch_param("site_id") : $this->EE->config->item('site_id') ),
+				'show' => $this->EE->TMPL->fetch_param("show"),
+				'show_empty' => $this->EE->TMPL->fetch_param("show_empty"),
+				'show_future_entries' => $this->EE->TMPL->fetch_param("show_future_entries"),
+				'show_expired_entries' => ( $this->EE->TMPL->fetch_param("show_expired_entries") ? $this->EE->TMPL->fetch_param("show_expired_entries") : $this->EE->TMPL->fetch_param("show_expired") ),
+				'status' => $this->EE->TMPL->fetch_param("status"),
+				'entry_id' => $this->EE->TMPL->fetch_param("entry_id"),
+				'category' => $this->EE->TMPL->fetch_param("category"),
+				'display_by_group' => ( $this->EE->TMPL->fetch_param("display_by_group") ? $this->EE->TMPL->fetch_param("display_by_group") : $this->EE->TMPL->fetch_param("group_id") ),
+				'order_by' => ( $this->EE->TMPL->fetch_param("orderby") ? $this->EE->TMPL->fetch_param("orderby") : $this->EE->TMPL->fetch_param("order_by") ),
+				'sort' => $this->EE->TMPL->fetch_param("sort"),
+				'style' => $this->EE->TMPL->fetch_param("style","linear"),
+				'class' => $this->EE->TMPL->fetch_param("class"),
+				'id' => $this->EE->TMPL->fetch_param("id"),
+				'container_tag' => ( $this->EE->TMPL->fetch_param("container_tag", "ul") != "" ? $this->EE->TMPL->fetch_param("container_tag", "ul") : "ul" ),
+				'item_tag' => ( $this->EE->TMPL->fetch_param("item_tag", "li") != "" ? $this->EE->TMPL->fetch_param("item_tag", "li") : "li" ),
+				'item_class' => $this->EE->TMPL->fetch_param("item_class"),
+				'backspace' => $this->EE->TMPL->fetch_param("backspace"),
+				'disable' => $this->EE->TMPL->fetch_param("disable")
+			);
+			
+			// ---------------------------------------------
+			//	Launch it
+			// ---------------------------------------------
+
+			$this->return_data = $this->entries();
+			
+			// ---------------------------------------------
+			//	During debugging, also output $params and $enable arrays
+			// ---------------------------------------------
+			
+			if ($this->debug_on)
+			{
+				$this->return_data .= "<br /><hr />" ;
+				$this->return_data .= $this->spit_params();
+				// $this->return_data .= $this->spit_enable();	
+			}
+			
+		}
 
 	} // END __construct()
+	
+	
+	
+	/**
+	* ==============================================
+	* Entries
+	* ==============================================
+	*
+	* @access public
+	* @return string
+	*/
+	public function entries($str='')
+	{
+	
+		$this->H->debug("Starting entries processing...");
+	
+		// ---------------------------------------------
+		//	Set category groups
+		// ---------------------------------------------
+		
+		$this->EE->db->select('DISTINCT cat_group, channel_id', FALSE)
+			->from('channels')
+			->where('site_id', $this->params['site_id']);
+		
+		if ($this->params['channel']){
+			$this->EE->db->where('channel_name', $this->params['channel']);
+		}
+
+		$cat_group_q = $this->EE->db->get();
+		
+		if ($cat_group_q->num_rows() != 1)
+		{
+			return $this->EE->TMPL->no_results();
+		}
+		
+		$this->channel_id = $cat_group_q->row('channel_id');
+		$this->group_id = $cat_group_q->row('cat_group');
+		
+		if ($this->params['display_by_group'] !== FALSE)
+		{
+		
+			$group_ids = explode('|', $this->group_id);
+			
+			list($ids, $in) = $this->H->explode_list_param($this->params['display_by_group']);
+			
+			// Either remove $ids from $group_ids OR limit $group_ids to $ids
+			$method = $in ? 'array_intersect' : 'array_diff';
+
+			// Alter group_ids
+			$group_ids = $method($group_ids, $ids);
+			
+			// Replace with new group_id list
+			$this->group_id = implode("|", $group_ids);
+			
+			// Clean up
+			unset($cat_group_q, $group_ids, $ids, $in);
+			
+		}
+		
+		$this->H->debug("Group IDs set: ".$this->group_id);
+		
+		// ---------------------------------------------
+		//	Bail out if there are no groups to display
+		// ---------------------------------------------
+		
+		if ($this->group_id == "")
+		{
+			$this->H->debug("No category groups to display; returning no_results.");
+			return $this->EE->TMPL->no_results();
+		}
+
+		// ---------------------------------------------
+		//	Filter entries by entry_id
+		// ---------------------------------------------	
+
+		if ($this->params['entry_id'] !== FALSE)
+		{
+		
+			list($ids, $in) = $this->H->explode_list_param($this->params['entry_id']);
+			
+			// ---------------------------------------------
+			//	If there are entry IDs in the param, add them to the appropriate list.
+			// ---------------------------------------------
+
+			if ($in)
+			{
+				$this->entries_list = $ids;
+				$this->H->debug("Filter by entries: Entries list = ".print_r($this->entries_list, TRUE));
+			}
+			else
+			{
+				$this->entries_exclude_list = $ids;
+				$this->H->debug("Filter by entries: Entries_exclude_list = ".print_r($this->entries_exclude_list, TRUE));
+			}
+			
+			// Clean up
+			unset($ids, $in);
+
+		}
+
+		// ---------------------------------------------
+		//	Filter entries by category IDs
+		// ---------------------------------------------
+
+		if ($this->params['category'] !== FALSE)
+		{
+
+			list($ids, $in) = $this->H->explode_list_param($this->params['category']);
+			
+			// ---------------------------------------------
+			//	Get a list of all the entries that match the param.
+			// ---------------------------------------------
+			
+			$this->EE->db->select('DISTINCT entry_id')
+				->from('category_posts')
+				->where_in('cat_id', $ids);
+				
+			$entries_by_category_q = $this->EE->db->get();			
+			
+			$matched_entries = array();
+			
+			if ($entries_by_category_q->num_rows() > 0)
+			{
+  				foreach ($entries_by_category_q->result() as $row)
+   				{
+	     			$matched_entries[] = $row->entry_id;
+     			}
+     		}
+
+			// ---------------------------------------------
+			//	Bail out if there will be no entries to display
+			// ---------------------------------------------
+
+			elseif ($in)
+			{
+				$this->H->debug("No entries match the requested categories; returning no_results.");
+				return $this->EE->TMPL->no_results();
+			}
+			
+			// ---------------------------------------------
+			//	Add the matched entries to the appropriate filter list
+			// ---------------------------------------------
+			
+			if ($in)
+			{
+				// Either remove $ids from $entry_ids OR limit $entry_ids to $ids
+				$method = empty($this->entries_list) ? 'array_merge' : 'array_intersect';
+				// Alter entry_ids
+				$this->entries_list = $method($this->entries_list, $matched_entries);
+				
+				$this->H->debug("Filter by category: Entries list + " . $method . " + ".print_r($matched_entries, TRUE) . " = " . $this->entries_list, TRUE);
+			}
+			else {
+				$this->entries_exclude_list = array_merge($this->entries_exclude_list, $matched_entries);
+				
+				$this->H->debug("Filter by category: Entries exclude list + array_merge + ".print_r($matched_entries, TRUE) . " = " . $this->entries_exclude_list, TRUE);
+			}
+			
+			// Clean up
+			unset($entries_by_category_q, $matched_entries, $ids, $in);
+			
+		}
+		
+		// ---------------------------------------------
+		//	Go fetch a crapload of entry data
+		// ---------------------------------------------
+		
+		$this->EE->db->from('channel_titles channel_titles, category_posts category_posts')
+			->where('channel_titles.channel_id', $this->channel_id, FALSE)
+			->where('channel_titles.entry_id = category_posts.entry_id', NULL, FALSE);
+		
+		// Filter by chosen entry IDs
+		
+		if ($this->entries_list)
+		{
+			$this->EE->db->where_in('channel_titles.entry_id', $this->entries_list);
+		}
+		if ($this->entries_exclude_list)
+		{
+			$this->EE->db->where_not_in('channel_titles.entry_id', $this->entries_exclude_list);
+		}
+		
+		// Filter future/expired entries
+		
+		$timestamp = ($this->EE->TMPL->cache_timestamp != '') ? $this->EE->localize->set_gmt($this->EE->TMPL->cache_timestamp) : $this->EE->localize->now;
+
+		if ($this->params['show_future_entries'] != 'yes')
+		{
+			$this->EE->db->where("channel_titles.entry_date <", $timestamp, FALSE);
+		}
+
+		if ($this->params['show_expired_entries'] != 'yes')
+		{
+			$this->EE->db->where("(channel_titles.expiration_date = 0 OR channel_titles.expiration_date > ".$timestamp.")", NULL, FALSE);
+		}
+
+		// Filter by status
+
+		if ($this->params['status'] !== FALSE)
+		{
+			$status = str_replace('Open', 'open', $this->params['status']);
+			$status = str_replace('Closed', 'closed', $status);
+			list($statuses, $in) = $this->H->explode_list_param($status);
+			$this->EE->db->{($in ? 'where_in' : 'where_not_in')}('channel_titles.status', $statuses);
+			unset($statuses, $in);
+		}
+		else
+		{
+			$this->EE->db->where('channel_titles.status', "'open'", FALSE);
+		}
+
+		// Filter by "show" param
+
+		if ($this->params['show'] !== FALSE)
+		{
+			list($cat_ids, $in) = $this->H->explode_list_param($this->params['show']);
+			$this->EE->db->{($in ? 'where_in' : 'where_not_in')}('category_posts.cat_id', $cat_ids);
+			unset($cat_ids, $in);
+		}
+		
+		// Order entries
+
+		$order_by = trim($this->params['order_by']);
+		$sort = trim($this->params['sort']);
+
+		switch ($sort)
+		{
+			case 'asc' :
+				break;
+			case 'desc' :
+				break;
+			default :
+				$sort = "asc" ;
+				break;
+		}
+
+		switch ($order_by)
+		{
+			case 'date' :
+				$this->EE->db->order_by('channel_titles.entry_date', $sort);
+				break;
+			case 'expiration_date' :
+				$this->EE->db->order_by('channel_titles.expiration_date', $sort);
+				break;
+			case 'title' :
+				$this->EE->db->order_by('channel_titles.title', $sort);
+				break;
+			case 'comment_total' :
+				$this->EE->db->order_by('channel_titles.entry_date', $sort);
+				break;
+			case 'most_recent_comment' :
+				$this->EE->db->order_by('channel_titles.recent_comment_date', 'desc');
+				$this->EE->db->order_by('channel_titles.entry_date', $sort);
+				break;
+			default :
+				$this->EE->db->order_by('channel_titles.title', $sort);
+				break;
+		}
+		
+		// Join with custom field data
+		
+		if ($this->enable['category_fields'])
+		{
+			$this->EE->db->join('channel_data', 'channel_data.entry_id = channel_titles.entry_id');
+		}
+
+		// Join with member data
+
+		if ($this->enable['member_data'])
+		{
+			$this->EE->db->join('members', 'members.member_id = channel_titles.author_id');
+		}
+		
+		// And here's the result!!!!
+
+		$this->entry_data_q = $this->EE->db->get();
+		
+		// ---------------------------------------------
+		//	Bail if there are no results
+		// ---------------------------------------------
+		
+		if ($this->entry_data_q->num_rows() < 1)
+		{
+			$this->H->debug("There are no results! Returning no_results.");
+  			return $this->EE->TMPL->no_results();
+     	}
+
+		// ---------------------------------------------
+		//	Process the results!
+		// ---------------------------------------------
+
+		foreach ($this->entry_data_q->result() as $row)
+		{
+     		$results_entries[] = $row->entry_id;
+ 		}
+		
+//		return "<br /><pre>".print_r($entry_data_q->result_array(), TRUE)."</pre><br />";
+
+		return $this->EE->TMPL->parse_variables($this->EE->TMPL->tagdata, $this->entry_data_q->result_array()) . "<br /><pre>".print_r($this->entry_data_q->result_array(), TRUE)."</pre><br />";;
+
+	} // END entries()	
+
 
 
 
@@ -195,238 +592,8 @@ class Category_sorted_entries {
 	/**  Category archives
 	/** ------------------------------------------------------------------------*/
 
-	function category_archive()
+	public function category_archive()
 	{
-		$sql = "SELECT DISTINCT cat_group, channel_id FROM exp_channels WHERE site_id IN ('".implode("','", $this->EE->TMPL->site_ids)."') ";
-
-		if ($channel = $this->EE->TMPL->fetch_param('channel'))
-		{
-			$sql .= $this->EE->functions->sql_andor_string($this->EE->TMPL->fetch_param('channel'), 'channel_name');
-		}
-
-		$query = $this->EE->db->query($sql);
-
-		if ($query->num_rows() != 1)
-		{
-			return '';
-		}
-
-		$group_id = $query->row('cat_group') ;
-		$channel_id = $query->row('channel_id') ;
-
-		/* */
-		// GROUP_ID param
-		// If there is a "group_id" specified, remove entires from $cat_group which are not in "group_id"
-		// (This is to cause entries to be displayed by the specified category groups.)
-		// ------------
-		
-		if ($this->EE->TMPL->fetch_param('group_id') !== FALSE)
-		{
-			$group_ids = explode('|', trim($group_id));
-			
-			if (strncmp($this->EE->TMPL->fetch_param('group_id'), 'not ', 4) == 0)
-			{
-				$not_these_groups = explode('|', trim(substr($this->EE->TMPL->fetch_param('group_id'), 3)));
-				$group_ids = array_diff($group_ids, $not_these_groups);
-			}
-			else
-			{
-				$these_groups = explode('|', trim($this->EE->TMPL->fetch_param('group_id')));
-				$group_ids = array_intersect($group_ids, $these_groups);
-			}
-			
-			$group_id = implode("|", $group_ids);
-			unset($group_ids, $not_these_groups, $these_groups);
-		}
-		
-		if ($group_id == "")
-		{
-			return '';
-		}
-		
-		// ------------
-		// end GROUP_ID param
-		/* */
-		
-
-		/* */
-		// ENTRY_ID param
-		// If there is an "entry_id" specified, establish entries list and turn the switch on.
-		// (This is Step 1 in filtering the entries by entry_id.)
-		// ------------
-		
-		if ($this->EE->TMPL->fetch_param('entry_id') !== FALSE)
-		{
-			if (strncmp($this->EE->TMPL->fetch_param('entry_id'), 'not ', 4) == 0)
-			{
-				$this->entries_not_list = explode('|', trim(substr($this->EE->TMPL->fetch_param('entry_id'), 3)));
-				$this->filter_by_entries_not = TRUE;
-			}
-			else
-			{
-				$this->entries_list = explode('|', trim($this->EE->TMPL->fetch_param('entry_id')));
-				$this->filter_by_entries = TRUE;
-			}
-		}
-		
-		// ------------
-		// end ENTRY_ID param
-		/* */
-
-
-		/* */
-		// CATEGORY param
-		// If there is a "category" specified, amend/activate the filter lists accordingly.
-		// ------------
-		
-		if ($this->EE->TMPL->fetch_param('category') !== FALSE)
-		{
-			
-			// First, get a list of all the entires that DO match the set of categories in the param.
-			
-			$category_sql = "SELECT DISTINCT entry_id FROM exp_category_posts WHERE cat_id IN ";
-			
-			if (strncmp($this->EE->TMPL->fetch_param('category'), 'not ', 4) == 0)
-			{
-				$not_these_categories = explode('|', trim(substr($this->EE->TMPL->fetch_param('category'), 3)));
-				$category_sql .= "('".implode("','", $not_these_categories)."')";
-			}
-			else
-			{
-				$these_categories = explode('|', trim($this->EE->TMPL->fetch_param('category')));
-				$category_sql .= "('".implode("','", $these_categories)."')";
-			}
-			
-			$category_query = $this->EE->db->query($category_sql);
-			
-			$matched_entries = array();
-			
-			if ($category_query->num_rows() > 0)
-			{
-  				foreach ($category_query->result() as $row)
-   				{
-	     			$matched_entries[] = $row->entry_id;
-     			}
-     		}
-     		
-     		// If the param includes a NOT, add these matching entries to the NOT list.
-			
-			if (strncmp($this->EE->TMPL->fetch_param('category'), 'not ', 4) == 0)
-			{
-				$this->entries_not_list = array_merge($matched_entries, $this->entries_not_list);
-				$this->filter_by_entries_not = TRUE;
-			}
-			
-			// Else, the param doesn't include a NOT; these matches act as filters.
-			
-			else
-			{
-				if ($this->filter_by_entries)
-				{
-					$this->entries_list = array_intersect($matched_entries, $this->entries_list);
-				}
-				else
-				{
-					$this->entries_list = array_merge($matched_entries, $this->entries_list);
-				}
-				
-				$this->filter_by_entries = TRUE;
-			}
-			
-			unset($category_sql, $category_query, $matched_entries, $these_categories, $not_these_categories);
-			
-		}
-		
-		// ------------
-		// end CATEGORY param
-		/* */
-		
-
-		$sql = "SELECT exp_category_posts.cat_id, exp_channel_titles.entry_id, exp_channel_titles.title, exp_channel_titles.url_title, exp_channel_titles.entry_date
-				FROM exp_channel_titles, exp_category_posts
-				WHERE channel_id = '$channel_id'
-				AND exp_channel_titles.entry_id = exp_category_posts.entry_id ";
-
-
-		/* */
-		// FILTER BY ENTRY LISTS
-		// Tack on a bit of query to include only the entries that are/aren't in the set we have specied.
-		// (This block takes effect when style="nested" is used.)
-		// ------------
-		if ($this->filter_by_entries_not)
-		{
-			$sql .= "AND exp_channel_titles.entry_id NOT IN ('".implode("','", $this->entries_not_list)."') ";
-		}
-		if ($this->filter_by_entries)
-		{
-			$sql .= "AND exp_channel_titles.entry_id IN ('".implode("','", $this->entries_list)."') ";
-		}
-		// ------------
-		// end filter block
-		/* */
-
-				
-		$timestamp = ($this->EE->TMPL->cache_timestamp != '') ? $this->EE->localize->set_gmt($this->EE->TMPL->cache_timestamp) : $this->EE->localize->now;
-
-		if ($this->EE->TMPL->fetch_param('show_future_entries') != 'yes')
-		{
-			$sql .= "AND exp_channel_titles.entry_date < ".$timestamp." ";
-		}
-
-		if ($this->EE->TMPL->fetch_param('show_expired') != 'yes')
-		{
-			$sql .= "AND (exp_channel_titles.expiration_date = 0 OR exp_channel_titles.expiration_date > ".$timestamp.") ";
-		}
-
-		$sql .= "AND exp_channel_titles.status != 'closed' ";
-
-		if ($status = $this->EE->TMPL->fetch_param('status'))
-		{
-			$status = str_replace('Open',	'open',	$status);
-			$status = str_replace('Closed', 'closed', $status);
-
-			$sql .= $this->EE->functions->sql_andor_string($status, 'exp_channel_titles.status');
-		}
-		else
-		{
-			$sql .= "AND exp_channel_titles.status = 'open' ";
-		}
-
-		if ($this->EE->TMPL->fetch_param('show') !== FALSE)
-		{
-			$sql .= $this->EE->functions->sql_andor_string($this->EE->TMPL->fetch_param('show'), 'exp_category_posts.cat_id').' ';
-		}
-
-
-		$orderby  = $this->EE->TMPL->fetch_param('orderby');
-
-		switch ($orderby)
-		{
-			case 'date'					: $sql .= "ORDER BY exp_channel_titles.entry_date";
-				break;
-			case 'expiration_date'		: $sql .= "ORDER BY exp_channel_titles.expiration_date";
-				break;
-			case 'title'				: $sql .= "ORDER BY exp_channel_titles.title";
-				break;
-			case 'comment_total'		: $sql .= "ORDER BY exp_channel_titles.entry_date";
-				break;
-			case 'most_recent_comment'	: $sql .= "ORDER BY exp_channel_titles.recent_comment_date desc, exp_channel_titles.entry_date";
-				break;
-			default						: $sql .= "ORDER BY exp_channel_titles.title";
-				break;
-		}
-
-		$sort = $this->EE->TMPL->fetch_param('sort');
-
-		switch ($sort)
-		{
-			case 'asc'	: $sql .= " asc";
-				break;
-			case 'desc'	: $sql .= " desc";
-				break;
-			default		: $sql .= " asc";
-				break;
-		}
 
 		$result = $this->EE->db->query($sql);
 		$channel_array = array();
@@ -480,7 +647,23 @@ class Category_sorted_entries {
 			}
 		}
 
+
+
+
+
 		$str = '';
+
+
+		////////////////////////////////////////////////////////////////////////////
+		////////////////////////////////////////////////////////////////////////////
+		////////////////////////////////////////////////////////////////////////////
+		
+		NESTED
+		
+		////////////////////////////////////////////////////////////////////////////
+		////////////////////////////////////////////////////////////////////////////
+		////////////////////////////////////////////////////////////////////////////		
+
 
 		if ($this->EE->TMPL->fetch_param('style') == '' OR $this->EE->TMPL->fetch_param('style') == 'nested')
 		{
@@ -557,6 +740,20 @@ class Category_sorted_entries {
 				}
 			}
 		}
+
+
+		////////////////////////////////////////////////////////////////////////////
+		////////////////////////////////////////////////////////////////////////////
+		////////////////////////////////////////////////////////////////////////////
+		
+		LINEAR
+		
+		////////////////////////////////////////////////////////////////////////////
+		////////////////////////////////////////////////////////////////////////////
+		////////////////////////////////////////////////////////////////////////////		
+
+
+
 		else
 		{
 			// fetch category field names and id's
@@ -803,6 +1000,295 @@ class Category_sorted_entries {
 
 		return $str;
 	}
+
+
+	/**
+	* ==============================================
+	* _Linear
+	* ==============================================
+	*
+	* @access public
+	* @return string
+	*/
+	private function _linear()
+	{
+	
+		if ($this->enable['category_fields'])
+		{
+		
+			$this->EE->db->select('field_id, field_name')
+				->from('category_fields')
+				->where('site_id', $this->params['site_id'])
+				->where_in('group_id', explode("|",$this->group_id));
+			
+			$this->category_fields_info_q = $this->EE->db->get();
+			
+			if ($this->category_fields_info_q->num_rows() > 0)
+			{
+				foreach ($this->category_fields_info_q->result_array() as $row)
+				{
+					$this->category_fields_info[$row['field_id']] = array(
+						'field_name' => $row['field_name'],
+						'field_id' => $row['field_id']
+					);
+				}
+			}
+		
+		}
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		// fetch category field names and id's
+
+		if ($this->enable['category_fields'] === TRUE)
+		{
+
+			if ($query->num_rows() > 0)
+			{
+				foreach ($query->result_array() as $row)
+				{
+					$this->catfields[] = array('field_name' => $row['field_name'], 'field_id' => $row['field_id']);
+				}
+			}
+
+			$field_sqla = ", cg.field_html_formatting, fd.* ";
+			$field_sqlb = " LEFT JOIN exp_category_field_data AS fd ON fd.cat_id = c.cat_id
+							LEFT JOIN exp_category_groups AS cg ON cg.group_id = c.group_id ";
+		}
+		else
+		{
+			$field_sqla = '';
+			$field_sqlb = '';
+		}
+
+		$sql = "SELECT DISTINCT (c.cat_id), c.cat_name, c.cat_url_title, c.cat_description, c.cat_image, c.group_id, c.parent_id {$field_sqla}
+				FROM (exp_categories AS c";
+
+		if ($this->EE->TMPL->fetch_param('show_empty') != 'no' AND $channel_id != '')
+		{
+			$sql .= ", exp_category_posts ";
+		}
+
+		$sql .= ") {$field_sqlb}";
+
+		if ($this->EE->TMPL->fetch_param('show_empty') == 'no')
+		{
+			$sql .= " LEFT JOIN exp_category_posts ON c.cat_id = exp_category_posts.cat_id ";
+
+			if ($channel_id != '')
+			{
+				$sql .= " LEFT JOIN exp_channel_titles ON exp_category_posts.entry_id = exp_channel_titles.entry_id ";
+			}
+		}
+		
+		$sql .= " WHERE c.group_id IN ('".str_replace('|', "','", $this->EE->db->escape_str($group_id))."')
+					AND c.group_id NOT IN ('WOOHOO-LINE-413') ";
+		
+		/* */
+		// FILTER BY ENTRY LISTS
+		// Tack on a bit of query to include only the entries that are/aren't in the set we have specied.
+		// (This block takes effect when style="linear" is used.)
+		// ------------
+		if ($this->filter_by_entries_not)
+		{
+			$sql .= "AND exp_category_posts.entry_id NOT IN ('".implode("','", $this->entries_not_list)."') ";
+		}
+		if ($this->filter_by_entries)
+		{
+			$sql .= "AND exp_category_posts.entry_id IN ('".implode("','", $this->entries_list)."') ";
+		}
+		// ------------
+		// end filter block
+		/* */			
+		
+
+		if ($this->EE->TMPL->fetch_param('show_empty') == 'no')
+		{
+			if ($channel_id != '')
+			{
+				$sql .= "AND exp_channel_titles.channel_id = '".$channel_id."' ";
+			}
+			else
+			{
+				$sql .= " AND exp_channel_titles.site_id IN ('".implode("','", $this->EE->TMPL->site_ids)."') ";
+			}
+
+			if ($status = $this->EE->TMPL->fetch_param('status'))
+			{
+				$status = str_replace('Open',	'open',	$status);
+				$status = str_replace('Closed', 'closed', $status);
+
+				$sql .= $this->EE->functions->sql_andor_string($status, 'exp_channel_titles.status');
+			}
+			else
+			{
+				$sql .= "AND exp_channel_titles.status = 'open' ";
+			}
+
+			if ($this->EE->TMPL->fetch_param('show_empty') == 'no')
+			{
+				$sql .= "AND exp_category_posts.cat_id IS NOT NULL ";
+			}
+		}
+
+		if ($this->EE->TMPL->fetch_param('show') !== FALSE)
+		{
+			$sql .= $this->EE->functions->sql_andor_string($this->EE->TMPL->fetch_param('show'), 'c.cat_id').' ';
+		}
+
+		if ($parent_only == TRUE)
+		{
+			$sql .= " AND c.parent_id = 0";
+		}
+
+		$sql .= " ORDER BY c.group_id, c.parent_id, c.cat_order";
+	 	$query = $this->EE->db->query($sql);
+
+		if ($query->num_rows() > 0)
+		{
+			$this->EE->load->library('typography');
+			$this->EE->typography->initialize();
+
+			$this->EE->typography->convert_curly = FALSE;
+
+			$used = array();
+
+			foreach($query->result_array() as $row)
+			{
+				if ( ! isset($used[$row['cat_name']]))
+				{
+					$chunk = $cat_chunk;
+
+					$cat_vars = array('category_name'			=> $row['cat_name'],
+									  'category_url_title'		=> $row['cat_url_title'],
+									  'category_description'	=> $row['cat_description'],
+									  'category_image'			=> $row['cat_image'],
+									  'category_id'				=> $row['cat_id'],
+									  'parent_id'				=> $row['parent_id']
+									);
+
+					foreach ($this->catfields as $v)
+					{
+						$cat_vars[$v['field_name']] = ( ! isset($row['field_id_'.$v['field_id']])) ? '' : $row['field_id_'.$v['field_id']];
+					}
+
+					$chunk = $this->EE->functions->prep_conditionals($chunk, $cat_vars);
+
+					$chunk = str_replace( array(LD.'category_id'.RD,
+												LD.'category_name'.RD,
+												LD.'category_url_title'.RD,
+												LD.'category_image'.RD,
+												LD.'category_description'.RD,
+												LD.'parent_id'.RD),
+										  array($row['cat_id'],
+										  		$row['cat_name'],
+												$row['cat_url_title'],
+										  		$row['cat_image'],
+										  		$row['cat_description'],
+												$row['parent_id']),
+										  $chunk);
+
+					foreach($c_path as $ckey => $cval)
+					{
+						$cat_seg = ($this->use_category_names == TRUE) ? $this->reserved_cat_segment.'/'.$row['cat_url_title'] : 'C'.$row['cat_id'];
+						$chunk = str_replace($ckey, $this->EE->functions->remove_double_slashes($cval.'/'.$cat_seg), $chunk);
+					}
+
+					// parse custom fields
+
+					foreach($this->catfields as $cfv)
+					{
+						if (isset($row['field_id_'.$cfv['field_id']]) AND $row['field_id_'.$cfv['field_id']] != '')
+						{
+							$field_content = $this->EE->typography->parse_type($row['field_id_'.$cfv['field_id']],
+																		array(
+																			  'text_format'		=> $row['field_ft_'.$cfv['field_id']],
+																			  'html_format'		=> $row['field_html_formatting'],
+																			  'auto_links'		=> 'n',
+																			  'allow_img_url'	=> 'y'
+																			)
+																	);
+							$chunk = str_replace(LD.$cfv['field_name'].RD, $field_content, $chunk);
+						}
+						else
+						{
+							// garbage collection
+							$chunk = str_replace(LD.$cfv['field_name'].RD, '', $chunk);
+						}
+					}
+
+					$str .= $chunk;
+					$used[$row['cat_name']] = TRUE;
+				}
+
+				foreach($result->result_array() as $trow)
+				{
+					if ($trow['cat_id'] == $row['cat_id'])
+					{
+						$chunk = str_replace(array(LD.'title'.RD, LD.'category_name'.RD),
+											 array($trow['title'],$row['cat_name']),
+											 $tit_chunk);
+											 
+						/* */
+						// {entry_id}, {url_title}
+						// An extra replace statement to allow display of entry_id and url_title variables.
+						// (This block takes effect when style="linear" is used.)
+						// ------------
+						
+						$chunk = str_replace(array(LD.'entry_id'.RD, LD.'url_title'.RD),
+											 array($trow['entry_id'],$trow['url_title']),
+											 $chunk);
+											 
+						// ------------
+						// end {entry_id}, {url_title} replacement
+						/* */	
+
+						foreach($t_path as $tkey => $tval)
+						{
+							$chunk = str_replace($tkey, $this->EE->functions->remove_double_slashes($tval.'/'.$trow['url_title']), $chunk);
+						}
+
+						foreach($id_path as $tkey => $tval)
+						{
+							$chunk = str_replace($tkey, $this->EE->functions->remove_double_slashes($tval.'/'.$trow['entry_id']), $chunk);
+						}
+
+						foreach($this->EE->TMPL->var_single as $key => $val)
+						{
+							if (isset($entry_date[$key]))
+							{
+								$val = str_replace($entry_date[$key], $this->EE->localize->convert_timestamp($entry_date[$key], $trow['entry_date'], TRUE), $val);
+
+								$chunk = $this->EE->TMPL->swap_var_single($key, $val, $chunk);
+							}
+
+						}
+
+						$str .= $chunk;
+					}
+				}
+			}
+		}
+
+		if ($this->EE->TMPL->fetch_param('backspace'))
+		{
+			$str = substr($str, 0, - $this->EE->TMPL->fetch_param('backspace'));
+		}
+	
+	} // END _linear()
+
+
+
+
+
 
 	// ------------------------------------------------------------------------
 
@@ -1504,6 +1990,57 @@ class Category_sorted_entries {
 		return $buffer;
 		
 	} // END usage()
+
+
+
+	/**
+	* ==============================================
+	* Debug functions
+	* ==============================================
+	*
+	* @access public
+	* @return string
+	*/
+	
+	public function spit_enable() {
+	
+		return '<pre>' . print_r($this->enable, TRUE) . '</pre>';
+	
+	} // END spit_enable()
+	
+	public function spit_params() {
+	
+		return '<pre>' . print_r($this->params, TRUE) . '</pre>';
+	
+	} // END spit_params()
+
+	public function spit_entry_data_q() {
+	
+		return '<pre>' . print_r($this->entry_data_q, TRUE) . '</pre>';
+	
+	} // END spit_entry_data_q()
+	
+	public function spit_categories_data_q() {
+	
+		return '<pre>' . print_r($this->categories_data_q, TRUE) . '</pre>';
+	
+	} // END spit_categories_data_q()
+	
+	public function spit_debug() {
+	
+		$a = array();
+		$b = array();
+		$b[] = "";
+		$b[] = "a";
+		$c = 'array_merge';
+		$d = $c($a, $b);
+		
+		$e = "";
+		$e = explode("|", $e);
+		
+		return '<pre>' . print_r($e, TRUE) . '</pre>';
+	
+	} // END spit_debug()
 
 
 
