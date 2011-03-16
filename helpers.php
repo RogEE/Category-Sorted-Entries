@@ -17,16 +17,20 @@ class Category_sorted_entries_helpers {
 	public function __construct()
 	{
 		$this->EE =& get_instance();
-	}	
-	
-	
+	}
+
+
 	/**
+	* ==============================================
+	* Explode list param
+	* ==============================================
+	*
 	* Converts EE parameter to workable php vars
 	*
 	* @access private
 	* @param string: String like 'not 1|2|3' or '40|15|34|234'
-	* @return array: [0] = array of items, [1] = boolean whether to include or exclude (TRUE means include, FALSE means exclude)
-	*/	
+	* @return array: [0] => array of items, [1] => boolean whether to include or exclude (TRUE means include, FALSE means exclude)
+	*/
 	public function explode_list_param($str = "")
 	{
 
@@ -50,17 +54,21 @@ class Category_sorted_entries_helpers {
 		// --------------------------------------
 
 		return array(explode('|', trim($str)), $in);
-	}
-	
-	
-	
+	} // END explode_list_param()
+
+
+
 	/**
+	* ==============================================
+	* Fetch disable param
+	* ==============================================
+	*
 	* Sets keys in supplied array based on EE template disable="" param
 	*
 	* @access private
 	* @param array: Array containing current/default enable/disable values
 	* @return array: Array containing updated enable/disable values
-	*/	
+	*/
 	public function fetch_disable_param($enabled = array())
 	{
 		if ($disable = $this->EE->TMPL->fetch_param('disable'))
@@ -74,13 +82,13 @@ class Category_sorted_entries_helpers {
 			}
 		}
 		return $enabled ;
-	}
+	} // END fetch_disable_param()
 
 
 
 	/**
 	* ==============================================
-	* Spit
+	* Spit (for debugging)
 	* ==============================================
 	*
 	* For spitting out [nicely formatted] raw data during debugging
@@ -89,30 +97,30 @@ class Category_sorted_entries_helpers {
 	* @return string
 	*/
 	public function spit($obj="") {
-	
+
 		return '<pre>' . print_r($obj, TRUE) . '</pre>';
-	
+
 	} // END spit()
 
-	
+
 
 	/**
 	 * ==============================================
-	 * Debug 
+	 * Log (for debugging)
 	 * ==============================================
 	 *
-	 * This method places a string into my debug log. For developemnt purposes.
+	 * This method places a string into my debug log table AND logs it in the template parser.
 	 *
 	 * @access	private
 	 * @param	string: The debug string
 	 * @return	string: The debug string parameter
-	 *//* */
-	public function debug($debug_statement = "")
+	 */
+	public function log($statement = "")
 	{
-		
+
 		if ($this->dev_on)
 		{
-			
+
 			if (! $this->EE->db->table_exists('rogee_debug_log'))
 			{
 				$this->EE->load->dbforge();
@@ -125,22 +133,21 @@ class Category_sorted_entries_helpers {
 				$this->EE->dbforge->add_key('event_id', TRUE);
 				$this->EE->dbforge->create_table('rogee_debug_log');
 			}
-			
-			$log_item = array('class' => __CLASS__, 'event' => $debug_statement, 'timestamp' => time());
+
+			$log_item = array('class' => __CLASS__, 'event' => $statement, 'timestamp' => time());
 			$this->EE->db->set($log_item);
 			$this->EE->db->insert('rogee_debug_log');
-		
-			$this->EE->TMPL->log_item( __CLASS__ . ": " . $debug_statement);
-		
+
 		}
-		
-		return $debug_statement;
-		
-	} // END debug() */
+
+		$this->EE->TMPL->log_item("Category Sorted Entries" . ": " . $statement);
+
+		return $statement;
+
+	} // END log()
 
 
-	
-	
+
 } // END Category_sorted_entries class
 
 /* End of file helpers.php */ 

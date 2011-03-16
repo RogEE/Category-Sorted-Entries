@@ -12,7 +12,7 @@
 if ( ! defined('ROGEE_CSE_VERSION') )
 {
 	define('ROGEE_CSE_NAME', 'RogEE Category Sorted Entires');
-	define('ROGEE_CSE_VERSION', '2.a.0');
+	define('ROGEE_CSE_VERSION', '2.b.0');
 	define('ROGEE_CSE_DOCS', 'http://michaelrog.com/ee/reg-restrict');
 }
 

@@ -6,7 +6,7 @@
 RogEE "Category Sorted Entries"
 a plug-in for ExpressionEngine 2
 by Michael Rog
-v2.a.1
+version 2.b.0
 
 Please e-mail me with questions, feedback, suggestions, bugs, etc.
 >> michael@michaelrog.com
@@ -14,11 +14,6 @@ Please e-mail me with questions, feedback, suggestions, bugs, etc.
 
 This plugin is compatible with NSM Addon Updater:
 >> http://github.com/newism/nsm.addon_updater.ee_addon
-
-Changelog:
-0.0.1 - alpha: filtering by entry_id and display by group_id
-0.0.2 - beta: improved filtering by entry_id, added filtering by category, more variables
-1.0.0 - release: cleaned up the file, added BitBucket details
 
 =====================================================
 
@@ -34,12 +29,6 @@ if (!defined('APP_VER') || !defined('BASEPATH')) { exit('No direct script access
 require_once PATH_THIRD.'category_sorted_entries/config.php';
 
 // ---------------------------------------------
-//	Helper functions offloaded to a second file, for neatness' sake.
-// ---------------------------------------------
-
-require_once PATH_THIRD.'category_sorted_entries/helpers.php';
-
-// ---------------------------------------------
 //	Provide plugin info to EE
 // ---------------------------------------------
 
@@ -51,6 +40,12 @@ $plugin_info = array(
 	'pi_description'	=> 'Like the built-in EE Category Archive, but way mo\' better (with additional variables and parameters for added control.)',
 	'pi_usage'			=> Category_sorted_entries::usage()
 );
+
+// ---------------------------------------------
+//	Helper functions offloaded to a second file, for neatness' sake.
+// ---------------------------------------------
+
+require_once PATH_THIRD.'category_sorted_entries/helpers.php';
 
 // ---------------------------------------------
 //	Okay, here goes nothing...
@@ -292,7 +287,7 @@ class Category_sorted_entries {
 
 			if ($this->dev_on)
 			{
-				$this->return_data .= "<br /><hr />" ;
+				$this->return_data .= "\n<br /><hr />" ;
 				$this->return_data .= $this->H->spit($this->params);
 				$this->return_data .= $this->H->spit($this->enable);
 			}
@@ -330,6 +325,7 @@ class Category_sorted_entries {
 
 		if ($cat_group_q->num_rows() != 1)
 		{
+			$this->H->log("No results -- No category groups assigned to the specified channel");
 			return $this->EE->TMPL->no_results();
 		}
 
@@ -363,7 +359,7 @@ class Category_sorted_entries {
 
 		if ($this->group_id == "")
 		{
-			$this->H->debug("No category groups to display; returning no_results.");
+			$this->H->log("No results -- No category groups to display");
 			return $this->EE->TMPL->no_results();
 		}
 
@@ -383,12 +379,12 @@ class Category_sorted_entries {
 			if ($in)
 			{
 				$this->entries_list = $ids;
-				$this->H->debug("Filter by entries: Entries list = ".print_r($this->entries_list, TRUE));
+				$this->H->log("Filtering by entries -- entries_list = " . implode(', ', $this->entries_list));
 			}
 			else
 			{
 				$this->entries_exclude_list = $ids;
-				$this->H->debug("Filter by entries: Entries_exclude_list = ".print_r($this->entries_exclude_list, TRUE));
+				$this->H->log("Filtering by entries -- entries_exclude_list = " . implode(', ', $this->entries_exclude_list));
 			}
 
 			// Clean up
@@ -431,7 +427,7 @@ class Category_sorted_entries {
 
 			elseif ($in)
 			{
-				$this->H->debug("No entries match the requested categories; returning no_results.");
+				$this->H->log("No results -- No entries match the requested categories");
 				return $this->EE->TMPL->no_results();
 			}
 
@@ -441,17 +437,13 @@ class Category_sorted_entries {
 
 			if ($in)
 			{
-				// Either remove $ids from $entry_ids OR limit $entry_ids to $ids
 				$method = empty($this->entries_list) ? 'array_merge' : 'array_intersect';
-				// Alter entry_ids
 				$this->entries_list = $method($this->entries_list, $matched_entries);
-
-				$this->H->debug("Filter by category: Entries list + " . $method . " + ".print_r($matched_entries, TRUE) . " = " . $this->entries_list, TRUE);
+				$this->H->log("Filter by category: Entries list + " . $method . " + ". implode(', ', $matched_entries) . " -> " . implode(', ', $this->entries_list));
 			}
 			else {
 				$this->entries_exclude_list = array_merge($this->entries_exclude_list, $matched_entries);
-
-				$this->H->debug("Filter by category: Entries exclude list + array_merge + ".print_r($matched_entries, TRUE) . " = " . $this->entries_exclude_list, TRUE);
+				$this->H->log("Filter by category: Entries exclude list + array_merge + ". implode(', ', $matched_entries) . " -> " . implode(', ', $this->entries_exclude_list));
 			}
 
 			// Clean up
@@ -579,7 +571,7 @@ class Category_sorted_entries {
 
 		if ($this->entry_data_q->num_rows() < 1)
 		{
-			$this->H->debug("There are no results! Returning no_results.");
+			$this->H->log("No results -- No entries returned from query");
   			return $this->EE->TMPL->no_results();
      	}
 
@@ -680,6 +672,7 @@ class Category_sorted_entries {
 
 				if ($category_parents_q->num_rows() < 1)
 				{
+					$this->H->log("No results -- No categories exist in this group");
 					return $this->EE->TMPL->no_results();
 				}
 
@@ -756,6 +749,7 @@ class Category_sorted_entries {
 
 		if ($this->category_data_q->num_rows() < 1)
 		{
+			$this->H->log("No results -- No category data returned from query");
 			return $this->EE->TMPL->no_results();
 		}
 
@@ -790,7 +784,7 @@ class Category_sorted_entries {
 
 		switch ($this->params['style']) {
 			case "linear":
-				return $this->_lienar();
+				return $this->_linear();
 				break;
 			case "nested":
 				return $this->_nested();
@@ -808,7 +802,7 @@ class Category_sorted_entries {
 	* Linear display
 	* ==============================================
 	*
-	* @access public
+	* @access private
 	* @return string
 	*/
 	private function _linear()
@@ -853,7 +847,7 @@ class Category_sorted_entries {
 	* Nested display
 	* ==============================================
 	*
-	* @access public
+	* @access private
 	* @return string
 	*/
 	private function _nested()
@@ -903,7 +897,7 @@ class Category_sorted_entries {
 	* But this is simpler, and categories, practically speaking, will rarely be more than a few levels nested.
 	*
 	* @access private
-	* @return array: contents_is_empty => boolean, contents => string
+	* @return array: [contents_is_empty] => boolean, [contents] => string
 	*/
 	private function _parse_cat_tree($group=0, $parent=0, $depth=0)
 	{
@@ -999,7 +993,7 @@ class Category_sorted_entries {
 	* Parse category row
 	* ==============================================
 	*
-	* @access public
+	* @access private
 	* @return string
 	*/
 	private function _parse_cat_row($cat_id="0")
@@ -1249,8 +1243,7 @@ class Category_sorted_entries {
 		entry_id: Only entries matching these IDs are returned.
 		category: Only entries assigned to these categories are returned.
 
-		{entry_id} - The entry ID of each entry (in the {entry_titles} section)
-		{url_title} - The URL title of each entry (in the {entry_titles} section)
+		AND, all of the default and Custom Channel Fields are available for use.
 
 		See http://michaelrog.com/ee/category-sorted-entries for detailed documentation.
 
