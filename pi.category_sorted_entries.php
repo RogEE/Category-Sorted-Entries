@@ -124,22 +124,6 @@ class Category_sorted_entries {
 	private $category_data_q;
 
 	/**
-	* Big complicated object containing category field info (field names and IDs) from SQL query
-	*
-	* @access private
-	* @var object
-	*/
-	private $category_fields_info_q;
-
-	/**
-	* Big complicated object containing category field data from SQL query
-	*
-	* @access private
-	* @var object
-	*/
-	private $category_fields_data_q;
-
-	/**
 	* Array containing entry [and custom field] data, keyed by entry_id
 	*
 	* @access private
@@ -1086,13 +1070,13 @@ class Category_sorted_entries {
 			->where('site_id', $this->params['site_id'])
 			->where_in('group_id', explode("|",$this->group_id));
 
-		$this->category_fields_info_q = $this->EE->db->get();
+		$category_fields_info_q = $this->EE->db->get();
 
 		// ---------------------------------------------
 		//	Make sure there are results before we try to process them...
 		// ---------------------------------------------
 
-		if ($this->category_fields_info_q->num_rows() < 1)
+		if ($category_fields_info_q->num_rows() < 1)
 		{
 			// No Custom Category Field results
 			return;
@@ -1102,7 +1086,7 @@ class Category_sorted_entries {
 		//	Iterate over the category_data_a, processing/replacing custom fields
 		// ---------------------------------------------
 
-		foreach ($this->category_fields_info_q->result() as $field)
+		foreach ($category_fields_info_q->result() as $field)
 		{
 
 			foreach($this->category_data_a as $key => $data_row)
@@ -1147,7 +1131,64 @@ class Category_sorted_entries {
 	*/
 	private function _process_custom_channel_fields()
 	{
-		return;
+		// return;
+		
+		// ---------------------------------------------
+		//	Fetch field groups
+		// ---------------------------------------------
+
+		$this->EE->db->select('field_id, field_name, channels.channel_html_formatting')
+			->from('channel_fields channel_fields, channels channels')
+			->where('channel_id', $this->channel_id)
+			->where('channels.field_group = channel_fields.group_id', NULL, FALSE);
+			
+		$channel_fields_info_q = $this->EE->db->get();
+
+		// ---------------------------------------------
+		//	Make sure there are results before we try to process them...
+		// ---------------------------------------------
+
+		if ($channel_fields_info_q->num_rows() < 1)
+		{
+			// No Custom Channel Field results
+			return;
+		}
+
+		// ---------------------------------------------
+		//	Iterate over the category_data_a, processing/replacing custom fields
+		// ---------------------------------------------
+
+		foreach ($channel_fields_info_q->result() as $field)
+		{
+
+			foreach($this->entry_data_a as $key => $data_row)
+			{
+				
+				if ( isset($data_row[ 'field_id_'.$field->field_id ]) )
+				{
+
+					$this->entry_data_a[$key][ $field->field_name ] = array();
+
+					$this->entry_data_a[$key][ $field->field_name ][] = $data_row[ 'field_id_'.$field->field_id ];
+
+					$this->entry_data_a[$key][ $field->field_name ][] = array(
+						'text_format' => $data_row['field_ft_'.$field->field_id],
+						'html_format' => $field->channel_html_formatting,
+						'auto_links' => 'n',
+						'allow_img_url' => 'y'
+					);
+
+				}
+
+				else
+				{
+					$this->entry_data_a[$key][ $field->field_name ] = "";
+				}
+
+			}
+
+		}
+		
 	}
 
 
