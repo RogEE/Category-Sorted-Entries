@@ -195,12 +195,18 @@ class Category_sorted_entries {
 	var $group_id;
 	var $channel_id;
 
+	var $assigned_categories_a = array();
+	var $displayed_categories_a = array();
+	var $category_parents_a = array();
+
 	// These are used for creating URIs
 
 	var $reserved_cat_segment 	= "";
 	var $use_category_names		= FALSE;
 	
 	// These are used with the nested category trees
+	
+	
 
 	var $category_list  		= array();
 	var $cat_full_array			= array();
@@ -586,14 +592,14 @@ class Category_sorted_entries {
 		
 		if ($this->enable['custom_fields'])
 		{
-			$this->EE->db->join('channel_data', 'channel_data.entry_id = channel_titles.entry_id');
+			$this->EE->db->join('channel_data channel_data', 'channel_data.entry_id = channel_titles.entry_id');
 		}
 
 		// Join with member data
 
 		if ($this->enable['member_data'])
 		{
-			$this->EE->db->join('members', 'members.member_id = channel_titles.author_id');
+			$this->EE->db->join('members members', 'members.member_id = channel_titles.author_id');
 		}
 		
 		// And here's the result!!!!
@@ -631,19 +637,20 @@ class Category_sorted_entries {
      			$this->entries_by_category_a[$q_row['cat_id']] = array();
      		}
      		
-     		// Add this entry_id to the list under the appropriate cat_id.
+     		// Add this entry_id to entries_by_category under the appropriate cat_id.
      		
      		$this->entries_by_category_a[$q_row['cat_id']][] = $q_row['entry_id'];
      		
+     		// Add this cat_id to assigned_categories_a
+     		
+     		$this->assigned_categories_a[] = $q_row['cat_id'] ;
+     		
  		}
 		
-//		return "<br /><pre>".print_r($entry_data_q->result_array(), TRUE)."</pre><br />";
-
-//		return $this->EE->TMPL->parse_variables($this->EE->TMPL->tagdata, $this->entry_data_q->result_array()) . "<br /><pre>".print_r($this->entry_data_q->result_array(), TRUE)."</pre><br />";
-
-//		return $this->spit($this->entries_by_category_a) ;
-
-		return $this->_linear() ; //. "<br /><pre>".print_r($this->entry_data_q->result_array(), TRUE)."</pre><br />";
+		// FOR DEBUG ONLY
+		return $this->spit($this->entry_data_q->result_array());
+		
+		// return $this->_linear() ;
 
 	} // END entries()	
 
@@ -652,7 +659,7 @@ class Category_sorted_entries {
 
 	/**
 	* ==============================================
-	* _Linear
+	* Linear display
 	* ==============================================
 	*
 	* @access public
@@ -801,6 +808,100 @@ class Category_sorted_entries {
 		return $return_string;
 		
 	}
+
+
+
+	/**
+	* ==============================================
+	* Nested display
+	* ==============================================
+	*
+	* @access public
+	* @return string
+	*/
+	private function _nested()
+	{
+
+
+
+		if ($result->num_rows() > 0 && $tit_chunk != '')
+		{
+				$i = 0;
+			foreach($result->result_array() as $row)
+			{
+				$chunk = "<li>".str_replace(LD.'category_name'.RD, '', $tit_chunk)."</li>";
+
+				foreach($t_path as $tkey => $tval)
+				{
+					$chunk = str_replace($tkey, $this->EE->functions->remove_double_slashes($tval.'/'.$row['url_title']), $chunk);
+				}
+
+				foreach($id_path as $tkey => $tval)
+				{
+					$chunk = str_replace($tkey, $this->EE->functions->remove_double_slashes($tval.'/'.$row['entry_id']), $chunk);
+				}
+
+				foreach($this->EE->TMPL->var_single as $key => $val)
+				{
+					if (isset($entry_date[$key]))
+					{
+						$val = str_replace($entry_date[$key], $this->EE->localize->convert_timestamp($entry_date[$key], $row['entry_date'], TRUE), $val);
+						$chunk = $this->EE->TMPL->swap_var_single($key, $val, $chunk);
+					}
+
+				}
+
+				/* */
+				// {entry_id}, {url_title}
+				// An extra replace statement to allow display of entry_id and url_title variables.
+				// (This block takes effect when style="nested" is used.)
+				// ------------
+				
+				$chunk = str_replace(array(LD.'entry_id'.RD, LD.'url_title'.RD),
+									 array($row['entry_id'],$row['url_title']),
+									 $chunk);
+									 
+				// ------------
+				// end {entry_id}, {url_title} replacement
+				/* */	
+
+
+				$channel_array[$i.'_'.$row['cat_id']] = str_replace(LD.'title'.RD, $row['title'], $chunk);
+				$i++;
+			}
+		}
+
+		$this->category_tree(
+								array(
+										'group_id'		=> $group_id,
+										'channel_id'		=> $channel_id,
+										'path'			=> $c_path,
+										'template'		=> $cat_chunk,
+										'channel_array' 	=> $channel_array,
+										'parent_only'	=> $parent_only,
+										'show_empty'	=> $this->EE->TMPL->fetch_param('show_empty'),
+										'strict_empty'	=> 'yes'										
+									  )
+							);
+
+		if (count($this->category_list) > 0)
+		{
+			$id_name = ($this->EE->TMPL->fetch_param('id') === FALSE) ? 'nav_cat_archive' : $this->EE->TMPL->fetch_param('id');
+			$class_name = ($this->EE->TMPL->fetch_param('class') === FALSE) ? 'nav_cat_archive' : $this->EE->TMPL->fetch_param('class');
+
+			$this->category_list[0] = '<ul id="'.$id_name.'" class="'.$class_name.'">'."\n";
+
+			foreach ($this->category_list as $val)
+			{
+				$str .= $val;
+			}
+		}
+
+	
+
+	
+	} // END _nested()
+
 
 
 	/**
@@ -1030,10 +1131,6 @@ class Category_sorted_entries {
 				$entry_date[$matches[0][$i]] = $this->EE->localize->fetch_date_params($matches[2][$i]);
 			}
 		}
-
-
-
-
 
 		$str = '';
 
@@ -1776,8 +1873,7 @@ class Category_sorted_entries {
 	/** --------------------------------*/
 	// This little recursive gem will travel up the
 	// category tree until it finds the category ID
-	// number of any parents.  It's used by the function
-	// below
+	// number of any parents.
 	function find_parent($parent, $all)
 	{
 		foreach ($all as $cat_id => $parent_id)
@@ -1792,9 +1888,8 @@ class Category_sorted_entries {
 		}
 	}
 
-	// ------------------------------------------------------------------------
-		
-					
+	
+				
 	/** ----------------------------------------
 	/**  Plugin Usage
 	/** ----------------------------------------*/
