@@ -183,7 +183,7 @@ class Category_sorted_entries {
 	* @access private
 	* @var boolean
 	*/
-	private $dev_on = TRUE;
+	private $dev_on = FALSE;
 
 	/**
 	* Other misc variables
@@ -290,19 +290,20 @@ class Category_sorted_entries {
 				'site_id' => ( $this->EE->TMPL->fetch_param("site_id") ? $this->EE->TMPL->fetch_param("site_id") : $this->EE->config->item('site_id') ),
 				'show' => $this->EE->TMPL->fetch_param("show"),
 				'parent_only' => $this->EE->TMPL->fetch_param("parent_only", "no"),
-				'show_empty' => $this->EE->TMPL->fetch_param("show_empty"),
-				'show_future_entries' => $this->EE->TMPL->fetch_param("show_future_entries"),
+				'show_empty' => $this->EE->TMPL->fetch_param("show_empty", "yes"),
+				'show_future_entries' => $this->EE->TMPL->fetch_param("show_future_entries", "no"),
 				'show_expired_entries' => ( $this->EE->TMPL->fetch_param("show_expired_entries") ? $this->EE->TMPL->fetch_param("show_expired_entries") : $this->EE->TMPL->fetch_param("show_expired") ),
 				'status' => $this->EE->TMPL->fetch_param("status"),
 				'entry_id' => $this->EE->TMPL->fetch_param("entry_id"),
 				'category' => $this->EE->TMPL->fetch_param("category"),
 				'display_by_group' => ( $this->EE->TMPL->fetch_param("display_by_group") ? $this->EE->TMPL->fetch_param("display_by_group") : $this->EE->TMPL->fetch_param("group_id") ),
-				'order_by' => ( $this->EE->TMPL->fetch_param("orderby") ? $this->EE->TMPL->fetch_param("orderby") : $this->EE->TMPL->fetch_param("order_by") ),
+				'order_by' => ( $this->EE->TMPL->fetch_param("order_by") ? $this->EE->TMPL->fetch_param("order_by") : $this->EE->TMPL->fetch_param("orderby") ),
 				'sort' => $this->EE->TMPL->fetch_param("sort"),
 				'style' => $this->EE->TMPL->fetch_param("style","linear"),
 				'class' => $this->EE->TMPL->fetch_param("class"),
 				'id' => $this->EE->TMPL->fetch_param("id"),
 				'container_tag' => ( $this->EE->TMPL->fetch_param("container_tag", "ul") != "" ? $this->EE->TMPL->fetch_param("container_tag", "ul") : "ul" ),
+				'container_class' => $this->EE->TMPL->fetch_param("container_class"),
 				'item_tag' => ( $this->EE->TMPL->fetch_param("item_tag", "li") != "" ? $this->EE->TMPL->fetch_param("item_tag", "li") : "li" ),
 				'item_class' => $this->EE->TMPL->fetch_param("item_class"),
 				'backspace' => $this->EE->TMPL->fetch_param("backspace"),
@@ -657,7 +658,7 @@ class Category_sorted_entries {
 		// ---------------------------------------------
 		
 		// FOR DEBUGGING
-		// return $this->H->spit($this->entry_data_q->result_array());
+		// return $this->H->spit($this->entry_data_q->result_array()) . $this->H->spit($this->entries_by_category_a);
 		
 		return $this->_categories();
 
@@ -679,7 +680,7 @@ class Category_sorted_entries {
 		// ---------------------------------------------
 		//	If we aren't going to show empty categories...
 		// ---------------------------------------------
-		
+
 		if ($this->params['show_empty'] == 'no')
 		{
 
@@ -696,6 +697,31 @@ class Category_sorted_entries {
 			if ($this->params['style'] == 'nested')
 			{
 
+				// Grab cat_id and parent_id for every category in the specified group(s)
+	
+				$this->EE->db->select('cat_id, parent_id')
+					->from('categories')
+					->where_in('group_id', explode("|", $this->group_id))
+					->order_by('group_id ASC, parent_id ASC, cat_order ASC');
+	
+				$category_parents_q = $this->EE->db->get();
+	
+				// No categories exist? Back to the barn for the night..
+				
+				if ($category_parents_q->num_rows() < 1)
+				{
+					return $this->EE->TMPL->no_results();
+				}
+	
+				// Add all the kids and their parents to the big family list.
+	
+				foreach($category_parents_q->result() as $cat)
+				{
+					$this->category_parents_a[$cat->cat_id] = $cat->parent_id;
+				}
+
+				// For all the [child] categories in selected_categories_a, add their parents too!
+
 				foreach ($this->selected_categories_a as $cat)
 				{
 					$this->_include_parents($cat, $this->category_parents_a);
@@ -703,6 +729,8 @@ class Category_sorted_entries {
 
 				$this->selected_categories_a = array_unique($this->selected_categories_a);
 
+				// (If we don't do all of this, we will run into a problem in which a parent category that is not assigned to a channel will be supressed, and therefore, any of its children will be supressed also, even if they are assigned to entries.)
+							
 			}
 
 		}
@@ -755,7 +783,7 @@ class Category_sorted_entries {
 	 	$this->category_data_q = $this->EE->db->get();		
 
 		// ---------------------------------------------
-		//	Bail if no results
+		//	No category data comes back? Eff that noise.
 		// ---------------------------------------------
 
 		if ($this->category_data_q->num_rows() < 1)
@@ -780,9 +808,13 @@ class Category_sorted_entries {
 		//	Figure out which style to output, and move on.
 		// ---------------------------------------------
 	
-		return $this->_linear();
+		// FOR DEBUGGING
+		// return $this->H->spit($this->category_data_q->result_array());
+		
+		return $this->_nested();
 
 	} // end _categories()
+
 
 
 	/**
@@ -797,7 +829,7 @@ class Category_sorted_entries {
 	{
 		
 		// ---------------------------------------------
-		//	Assemble output string
+		//	Assemble output string...
 		// ---------------------------------------------
 		
 		$return_string = "";
@@ -809,12 +841,20 @@ class Category_sorted_entries {
 			
 		}
 
+		// ---------------------------------------------
+		//	Whack a few characters off the end, maybe...
+		// ---------------------------------------------
+
 		if ($this->params['backspace'])
 		{
 			$b = (int)$this->EE->params['backspace'];
 			
 			$return_string = substr($return_string, 0, - $b);
 		}
+
+		// ---------------------------------------------
+		//	And away we go!
+		// ---------------------------------------------
 		
 		return $return_string;
 		
@@ -832,86 +872,135 @@ class Category_sorted_entries {
 	*/
 	private function _nested()
 	{
+		
+		$return_string = "\n";
 
-
-
-		if ($result->num_rows() > 0 && $tit_chunk != '')
+		if ($this->params['container_tag'] != "")
 		{
-				$i = 0;
-			foreach($result->result_array() as $row)
-			{
-				$chunk = "<li>".str_replace(LD.'category_name'.RD, '', $tit_chunk)."</li>";
-
-				foreach($t_path as $tkey => $tval)
-				{
-					$chunk = str_replace($tkey, $this->EE->functions->remove_double_slashes($tval.'/'.$row['url_title']), $chunk);
-				}
-
-				foreach($id_path as $tkey => $tval)
-				{
-					$chunk = str_replace($tkey, $this->EE->functions->remove_double_slashes($tval.'/'.$row['entry_id']), $chunk);
-				}
-
-				foreach($this->EE->TMPL->var_single as $key => $val)
-				{
-					if (isset($entry_date[$key]))
-					{
-						$val = str_replace($entry_date[$key], $this->EE->localize->convert_timestamp($entry_date[$key], $row['entry_date'], TRUE), $val);
-						$chunk = $this->EE->TMPL->swap_var_single($key, $val, $chunk);
-					}
-
-				}
-
-				/* */
-				// {entry_id}, {url_title}
-				// An extra replace statement to allow display of entry_id and url_title variables.
-				// (This block takes effect when style="nested" is used.)
-				// ------------
-				
-				$chunk = str_replace(array(LD.'entry_id'.RD, LD.'url_title'.RD),
-									 array($row['entry_id'],$row['url_title']),
-									 $chunk);
-									 
-				// ------------
-				// end {entry_id}, {url_title} replacement
-				/* */	
-
-
-				$channel_array[$i.'_'.$row['cat_id']] = str_replace(LD.'title'.RD, $row['title'], $chunk);
-				$i++;
-			}
+			$root_id = $this->params['id'];
+			$root_classes = array($this->params['class'], $this->params['container_class']);
+			$root_class = trim(implode(" ", $root_classes));
+			$return_string .= "\r" 
+				. "<"
+				. $this->params['container_tag']
+				. ( $root_id != "" ? ' id="'.$root_id.'"' : "" )
+				. ( $root_class != "" ? ' class="'.$root_class.'"' : "" )
+				. ">" ;			
+		}
+		
+		foreach (explode("|",$this->group_id) as $group_id)
+		{
+			$parsed_tree = $this->_parse_cat_tree($group_id,0,0);
+			$return_string .= $parsed_tree['contents'];
 		}
 
-		$this->category_tree(
-								array(
-										'group_id'		=> $group_id,
-										'channel_id'		=> $channel_id,
-										'path'			=> $c_path,
-										'template'		=> $cat_chunk,
-										'channel_array' 	=> $channel_array,
-										'parent_only'	=> $parent_only,
-										'show_empty'	=> $this->EE->TMPL->fetch_param('show_empty'),
-										'strict_empty'	=> 'yes'										
-									  )
-							);
 
-		if (count($this->category_list) > 0)
+		if ($this->params['container_tag'] != "")
 		{
-			$id_name = ($this->EE->TMPL->fetch_param('id') === FALSE) ? 'nav_cat_archive' : $this->EE->TMPL->fetch_param('id');
-			$class_name = ($this->EE->TMPL->fetch_param('class') === FALSE) ? 'nav_cat_archive' : $this->EE->TMPL->fetch_param('class');
-
-			$this->category_list[0] = '<ul id="'.$id_name.'" class="'.$class_name.'">'."\n";
-
-			foreach ($this->category_list as $val)
-			{
-				$str .= $val;
-			}
+			$return_string .= "\r" . "</" . $this->params['container_tag'] . ">" ;			
 		}
 
-	
-
+		return $return_string;
 	
 	} // END _nested()
+
+
+
+	/**
+	* ==============================================
+	* Parse cat tree
+	* ==============================================
+	*
+	* @access private
+	* @return string
+	*/
+	private function _parse_cat_tree($group=0, $parent=0, $depth=0)
+	{
+	
+		$return_string = "";
+		
+		$has_contents = FALSE;
+		
+		// Each "new line" starts with a carriage return and {depth} tabs.
+		$nl = "\n" . str_repeat("\t", $depth);
+		
+		// And "indented new line" starts with a carriage return and {depth+1} tabs.
+		
+		$nl_i = $nl . "\t";
+		
+		// ---------------------------------------------
+		//	If we are above the root, open a container
+		// ---------------------------------------------
+		
+		if ($depth > 0 && $this->params['container_tag'] != "")
+		{
+			$return_string .= $nl . "<" . $this->params['container_tag'] . ( $this->params['container_class'] ? " class=\"".$this->params['container_class']."\">" : ">" );
+		}
+
+		// ---------------------------------------------
+		//	Search through ALL the categories (which are sorted by group_id, parent_id, cat_order) and build the tree
+		//	(This will take O(n^2) time, but I'm pretty sure there's no easy way to do it better, since we MUST preserve the sort order.)
+		// ---------------------------------------------
+
+		foreach ($this->category_data_q->result() as $q_row)
+		{
+			
+			if ($q_row->group_id == $group && $q_row->parent_id == $parent)
+			{
+				
+				$has_contents = TRUE;
+				
+				// Open item
+				
+				if ($this->params['item_tag'] != "")
+				{
+					$return_string .= $nl_i . "<" . $this->params['item_tag'] . ( $this->params['item_class'] ? ' class="'.$this->params['item_class'].'">' : ">" );
+				}
+				
+				// Include contents for this node
+				
+				$return_string .= $nl_i . "\t" . $this->_parse_cat_row($q_row->cat_id);
+				
+				// Include subtree contents, if subtree has contents
+				
+				$subtree = $this->_parse_cat_tree($group, $q_row->cat_id, $depth+2);
+				
+				if (!$subtree['contents_is_empty'])
+				{
+					$return_string .= $subtree['contents'];
+				}
+			
+				// Close item
+				
+				if ($this->params['item_tag'] != "")
+				{
+					$return_string .= $nl_i . "</" . $this->params['item_tag'] . ">";
+				}
+				
+			}
+		
+		}		
+
+		// ---------------------------------------------
+		//	If we opened a container, it's only good manners to close it, too!
+		// ---------------------------------------------
+
+		if ($depth > 0 && $this->params['container_tag'] != "")
+		{
+			$return_string .= $nl . "</" . $this->params['container_tag'] . ">";
+		}
+
+		// ---------------------------------------------
+		//	Return the node array
+		// ---------------------------------------------
+		
+		return array(
+			'contents_is_empty' => !$has_contents,
+			'contents' => $return_string
+		);
+	
+	} // _parse_cat_tree
+
 
 
 
@@ -965,11 +1054,13 @@ class Category_sorted_entries {
 		
 		$variables[0]['entries'] = array();
 		
-		foreach ($this->entries_by_category_a[$cat_id] as $entry_array)
-		{
-			$variables[0]['entries'][] = $this->entry_data_a[$entry_array];
+		if (isset($this->entries_by_category_a[$cat_id]) && is_array($this->entries_by_category_a[$cat_id])){
+			foreach ($this->entries_by_category_a[$cat_id] as $entry_array)
+			{
+				$variables[0]['entries'][] = $this->entry_data_a[$entry_array];
+			}
 		}
-		
+
 		// FOR DEBUG ONLY
 		// return $this->H->spit($variables) ;
 		
@@ -1243,188 +1334,6 @@ class Category_sorted_entries {
 
 
 
-
-
-		/** -----------------------------------
-		/**  Are we showing empty categories
-		/** -----------------------------------*/
-
-		// If we are only showing categories that have been assigned to entries
-		// we need to run a couple queries and run a recursive function that
-		// figures out whether any given category has a parent.
-		// If we don't do this we will run into a problem in which parent categories
-		// that are not assigned to a channel will be supressed, and therefore, any of its
-		// children will be supressed also - even if they are assigned to entries.
-		// So... we will first fetch all the category IDs, then only the ones that are assigned
-		// to entries, and lastly we'll recursively run up the tree and fetch all parents.
-		// Follow that?  No?  Me neither...
-
-		if ($this->params['show_empty'] == 'no')
-		{
-
-			// ---------------------------------------------
-			//	Grab cat_id and parent_id for every category in our desired group(s)
-			// ---------------------------------------------
-
-			$this->EE->db->select('SELECT cat_id, parent_id')
-				->from('categories')
-				->where_in('group_id', explode("|", $this->group_id))
-				->order_by('group_id ASC, parent_id ASC, cat_order ASC');
-
-			$category_parents_q = $this->EE->db->get();
-
-			// No categories exist?  Back to the barn for the night..
-			if ($category_parents_q->num_rows() < 1)
-			{
-				return FALSE;
-			}
-
-			foreach($category_parents_q->result() as $cat)
-			{
-				$this->category_parents_a[$cat->cat_id] = $cat->parent_id;
-			}
-
-		//}
-
-			// Next we'll grab only the assigned categories
-
-			$sql = "SELECT DISTINCT(exp_categories.cat_id), parent_id
-					FROM exp_categories
-					LEFT JOIN exp_category_posts ON exp_categories.cat_id = exp_category_posts.cat_id
-					LEFT JOIN exp_channel_titles ON exp_category_posts.entry_id = exp_channel_titles.entry_id ";
-			
-
-			$sql .= "WHERE group_id IN ('".str_replace('|', "','", $this->EE->db->escape_str($group_id))."')
-						AND group_id NOT IN ('WOOHOO-LINE-669') ";
-
-			$sql .= "AND exp_category_posts.cat_id IS NOT NULL ";
-			
-			
-			/* */
-			// FILTER BY ENTRY LISTS
-			// Tack on a bit of query to include only the entries that are/aren't in the set we have specied.
-			// (This block takes effect when style="nested" is used AND show_empty="no".)
-			// ------------
-			if ($this->filter_by_entries_not)
-			{
-				$sql .= "AND exp_channel_titles.entry_id NOT IN ('".implode("','", $this->entries_not_list)."') ";
-			}
-			if ($this->filter_by_entries)
-			{
-				$sql .= "AND exp_channel_titles.entry_id IN ('".implode("','", $this->entries_list)."') ";
-			}
-			// ------------
-			// end filter block
-			/* */
-			
-						
-
-			if ($channel_id != '' && $strict_empty == 'yes')
-			{
-				$sql .= "AND exp_channel_titles.channel_id = '".$channel_id."' ";
-			}
-			else
-			{
-				$sql .= "AND exp_channel_titles.site_id IN ('".implode("','", $this->EE->TMPL->site_ids)."') ";
-			}
-
-			if (($status = $this->EE->TMPL->fetch_param('status')) !== FALSE)
-	        {
-				$status = str_replace(array('Open', 'Closed'), array('open', 'closed'), $status);
-	            $sql .= $this->EE->functions->sql_andor_string($status, 'exp_channel_titles.status');
-	        }
-	        else
-	        {
-	            $sql .= "AND exp_channel_titles.status != 'closed' ";
-	        }
-
-			/**------
-			/**  We only select entries that have not expired
-			/**------*/
-
-			$timestamp = ($this->EE->TMPL->cache_timestamp != '') ? $this->EE->localize->set_gmt($this->EE->TMPL->cache_timestamp) : $this->EE->localize->now;
-
-			if ($this->EE->TMPL->fetch_param('show_future_entries') != 'yes')
-			{
-				$sql .= " AND exp_channel_titles.entry_date < ".$timestamp." ";
-			}
-
-			if ($this->EE->TMPL->fetch_param('show_expired') != 'yes')
-			{
-				$sql .= " AND (exp_channel_titles.expiration_date = 0 OR exp_channel_titles.expiration_date > ".$timestamp.") ";
-			}
-
-			if ($parent_only === TRUE)
-			{
-				$sql .= " AND parent_id = 0";
-			}
-
-			$sql .= " ORDER BY group_id, parent_id, cat_order";
-
-			$query = $this->EE->db->query($sql);
-
-			if ($query->num_rows() == 0)
-			{
-				return FALSE;
-			}
-
-			// All the magic happens here, baby!!
-
-			foreach($query->result_array() as $row)
-			{
-				if ($row['parent_id'] != 0)
-				{
-					$this->_include_parents($row['parent_id'], $all);
-				}
-
-				$this->cat_full_array[] = $row['cat_id'];
-			}
-
-			$this->cat_full_array = array_unique($this->cat_full_array);
-
-			$sql = "SELECT c.cat_id, c.parent_id, c.cat_name, c.cat_url_title, c.cat_image, c.cat_description {$field_sqla}
-			FROM exp_categories AS c
-			{$field_sqlb}
-			WHERE c.cat_id IN (";
-
-			foreach ($this->cat_full_array as $val)
-			{
-				$sql .= $val.',';
-			}
-
-			$sql = substr($sql, 0, -1).')';
-
-			$sql .= " ORDER BY c.group_id, c.parent_id, c.cat_order";
-
-			$query = $this->EE->db->query($sql);
-
-			if ($query->num_rows() == 0)
-			{
-				return FALSE;
-			}
-		}
-		else
-		{
-			$sql = "SELECT DISTINCT(c.cat_id), c.parent_id, c.cat_name, c.cat_url_title, c.cat_image, c.cat_description {$field_sqla}
-					FROM exp_categories AS c
-					{$field_sqlb}
-					WHERE c.group_id IN ('".str_replace('|', "','", $this->EE->db->escape_str($group_id))."')
-					AND c.group_id NOT IN ('WOOHOO-LINE-763') ";
-
-			if ($parent_only === TRUE)
-			{
-				$sql .= " AND c.parent_id = 0";
-			}
-
-			$sql .= " ORDER BY c.group_id, c.parent_id, c.cat_order";
-
-			$query = $this->EE->db->query($sql);
-
-			if ($query->num_rows() == 0)
-			{
-				return FALSE;
-			}
-		}
 
 		// Here we check the show parameter to see if we have any
 		// categories we should be ignoring or only a certain group of
