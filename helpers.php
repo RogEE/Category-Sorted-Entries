@@ -11,9 +11,13 @@
 
 class Category_sorted_entries_helpers {
 
+	// Local reference to EE superobject
 	private $EE;
-	private $dev_on = TRUE;
+	
+	// Write debug logs to DB table?
+	private $dev_on = FALSE;
 
+	// And, here... we... go!
 	public function __construct()
 	{
 		$this->EE =& get_instance();
@@ -27,7 +31,7 @@ class Category_sorted_entries_helpers {
 	*
 	* Converts EE parameter to workable php vars
 	*
-	* @access private
+	* @access public
 	* @param string: String like 'not 1|2|3' or '40|15|34|234'
 	* @return array: [0] => array of items, [1] => boolean whether to include or exclude (TRUE means include, FALSE means exclude)
 	*/
@@ -65,7 +69,7 @@ class Category_sorted_entries_helpers {
 	*
 	* Sets keys in supplied array based on EE template disable="" param
 	*
-	* @access private
+	* @access public
 	* @param array: Array containing current/default enable/disable values
 	* @return array: Array containing updated enable/disable values
 	*/
@@ -111,7 +115,7 @@ class Category_sorted_entries_helpers {
 	 *
 	 * This method places a string into my debug log table AND logs it in the template parser.
 	 *
-	 * @access	private
+	 * @access	public
 	 * @param	string: The debug string
 	 * @return	string: The debug string parameter
 	 */
@@ -140,7 +144,10 @@ class Category_sorted_entries_helpers {
 
 		}
 
-		$this->EE->TMPL->log_item("Category Sorted Entries" . ": " . $statement);
+		if (isset($this->EE->TMPL) && is_object($this->EE->TMPL))
+		{
+			$this->EE->TMPL->log_item("Category Sorted Entries" . ": " . $statement);
+		}
 
 		return $statement;
 
