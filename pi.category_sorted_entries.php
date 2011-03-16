@@ -124,14 +124,59 @@ class Category_sorted_entries {
 	private $category_data_q;
 
 	/**
-	* Big complicated objects containing category field info/data from SQL query
+	* Big complicated object containing category field info (field names and IDs) from SQL query
+	*
+	* @access private
+	* @var object
+	*/
+	private $category_fields_info_q;
+	
+	/**
+	* Big complicated object containing category field data from SQL query
 	*
 	* @access private
 	* @var object
 	*/
 	private $category_fields_data_q;
-	private $category_fields_info_q;
+
+	/**
+	* Array containing entry [and custom field] data, keyed by entry_id
+	*
+	* @access private
+	* @var array
+	*/
+	private $entry_data_a = array();
+
+	/**
+	* Array containing category [and category field] data, keyed by cat_id
+	*
+	* @access private
+	* @var array
+	*/
+	private $category_data_a = array();
 	
+	/**
+	* Array containing lists of entry IDs for each category, keyed by cat_id
+	*
+	* @access private
+	* @var array
+	*/
+	private $entries_by_category_a = array();
+	
+	/**
+	* Final variable replacement array
+	*
+	* @access private
+	* @var array
+	* @see http://expressionengine.com/user_guide/development/usage/template.html#parsing_variables
+	*/
+	private $tag_vars_a = array();	
+
+
+
+	////////////---------------------------------////////////
+
+
 	/**
 	* Debug switch
 	*
@@ -149,15 +194,12 @@ class Category_sorted_entries {
 	
 	var $group_id;
 	var $channel_id;
-	
-	var $category_fields_info = array();
 
 	// These are used for creating URIs
 
-	var $reserved_cat_segment 	= '';
+	var $reserved_cat_segment 	= "";
 	var $use_category_names		= FALSE;
-
-
+	
 	// These are used with the nested category trees
 
 	var $category_list  		= array();
@@ -241,6 +283,7 @@ class Category_sorted_entries {
 				'channel' => $this->EE->TMPL->fetch_param("channel"),
 				'site_id' => ( $this->EE->TMPL->fetch_param("site_id") ? $this->EE->TMPL->fetch_param("site_id") : $this->EE->config->item('site_id') ),
 				'show' => $this->EE->TMPL->fetch_param("show"),
+				'parent_only' => $this->EE->TMPL->fetch_param("parent_only", "no"),
 				'show_empty' => $this->EE->TMPL->fetch_param("show_empty"),
 				'show_future_entries' => $this->EE->TMPL->fetch_param("show_future_entries"),
 				'show_expired_entries' => ( $this->EE->TMPL->fetch_param("show_expired_entries") ? $this->EE->TMPL->fetch_param("show_expired_entries") : $this->EE->TMPL->fetch_param("show_expired") ),
@@ -272,8 +315,8 @@ class Category_sorted_entries {
 			
 			if ($this->debug_on)
 			{
-				$this->return_data .= "<br /><hr />" ;
-				$this->return_data .= $this->spit_params();
+				// $this->return_data .= "<br /><hr />" ;
+				// $this->return_data .= $this->spit_params();
 				// $this->return_data .= $this->spit_enable();	
 			}
 			
@@ -291,7 +334,7 @@ class Category_sorted_entries {
 	* @access public
 	* @return string
 	*/
-	public function entries($str='')
+	public function entries($str="")
 	{
 	
 		$this->H->debug("Starting entries processing...");
@@ -541,7 +584,7 @@ class Category_sorted_entries {
 		
 		// Join with custom field data
 		
-		if ($this->enable['category_fields'])
+		if ($this->enable['custom_fields'])
 		{
 			$this->EE->db->join('channel_data', 'channel_data.entry_id = channel_titles.entry_id');
 		}
@@ -568,22 +611,363 @@ class Category_sorted_entries {
      	}
 
 		// ---------------------------------------------
-		//	Process the results!
+		//	Process the results into the entry_data_a and entries_by_category_a arrays
 		// ---------------------------------------------
 
-		foreach ($this->entry_data_q->result() as $row)
+		foreach ($this->entry_data_q->result_array() as $q_row)
 		{
-     		$results_entries[] = $row->entry_id;
+		
+			// Add entry data to entry_data_a (but only once per entry_id).
+			
+     		if ( ! isset($this->entry_data_a[ $q_row['entry_id'] ]) )
+     		{
+     			$this->entry_data_a[$q_row['entry_id']] = $q_row;
+     		}
+     		
+     		// If this cat_id hasn't been added to entries_by_category_a yet, initialize an array there.
+     		
+     		if ( ! isset($this->entries_by_category_a[ $q_row['cat_id'] ]) )
+     		{
+     			$this->entries_by_category_a[$q_row['cat_id']] = array();
+     		}
+     		
+     		// Add this entry_id to the list under the appropriate cat_id.
+     		
+     		$this->entries_by_category_a[$q_row['cat_id']][] = $q_row['entry_id'];
+     		
  		}
 		
 //		return "<br /><pre>".print_r($entry_data_q->result_array(), TRUE)."</pre><br />";
 
-		return $this->EE->TMPL->parse_variables($this->EE->TMPL->tagdata, $this->entry_data_q->result_array()) . "<br /><pre>".print_r($this->entry_data_q->result_array(), TRUE)."</pre><br />";;
+//		return $this->EE->TMPL->parse_variables($this->EE->TMPL->tagdata, $this->entry_data_q->result_array()) . "<br /><pre>".print_r($this->entry_data_q->result_array(), TRUE)."</pre><br />";
+
+//		return $this->spit($this->entries_by_category_a) ;
+
+		return $this->_linear() ; //. "<br /><pre>".print_r($this->entry_data_q->result_array(), TRUE)."</pre><br />";
 
 	} // END entries()	
 
 
 
+
+	/**
+	* ==============================================
+	* _Linear
+	* ==============================================
+	*
+	* @access public
+	* @return string
+	*/
+	private function _linear()
+	{
+		
+		// ---------------------------------------------
+		//	Massive category data query!
+		// ---------------------------------------------
+		
+		$select_sql = 'DISTINCT (c.cat_id), c.cat_name, c.cat_url_title, c.cat_description, c.cat_image, c.group_id, c.parent_id' 
+			. ( $this->enable['category_fields'] ? ", cg.field_html_formatting, fd.*" : "" );
+		$from_sql = 'categories c'
+			. ( ($this->params['show_empty'] != 'no' AND $this->channel_id != '') ? ", category_posts category_posts" : "" );
+		
+		$this->EE->db->select($select_sql)
+			->from($from_sql);
+
+		if ($this->enable['category_fields'])
+		{
+			$this->EE->db->join('category_field_data AS fd', 'fd.cat_id = c.cat_id', 'LEFT');
+			$this->EE->db->join('category_groups AS cg', 'cg.group_id = c.group_id', 'LEFT');
+		}
+			
+		if ($this->params['show_empty'] == 'no')
+		{
+			$this->EE->db->join('category_posts category_posts', 'c.cat_id = category_posts.cat_id', 'LEFT');
+
+			if ($this->channel_id != '')
+			{
+				$this->EE->db->join('channel_titles channel_titles', 'category_posts.entry_id = channel_titles.entry_id', 'LEFT');
+			}
+		}
+
+		// Only get categories from the groups we want to display.
+
+		$this->EE->db->where_in('c.group_id', explode("|", $this->group_id));
+
+		// If the entry ID filter lists are not empty, use them to filter categories based on the entry IDs we have specified.
+
+		if ($this->entries_list)
+		{
+			$this->EE->db->where_in('category_posts.entry_id', $this->entries_list);
+		}
+		if ($this->entries_exclude_list)
+		{
+			$this->EE->db->where_not_in('category_posts.entry_id', $this->entries_exclude_list);
+		}
+
+		// Filter out cateogires not assigned to any entries
+
+		if ($this->params['show_empty'] == 'no')
+		{
+			if ($this->channel_id != '')
+			{
+				$this->EE->db->where('channel_titles.channel_id', $this->channel_id, FALSE);
+			}
+			else
+			{
+				$this->EE->db->where('channel_titles.site_id', $this->params['site_id']);
+			}
+
+			if ($this->params['status'])
+			{
+				$status = str_replace('Open', 'open', $this->params['status']);
+				$status = str_replace('Closed', 'closed', $status);
+				list($statuses, $in) = $this->H->explode_list_param($status);
+				$this->EE->db->{($in ? 'where_in' : 'where_not_in')}('channel_titles.status', $statuses);
+				unset($statuses, $in);
+			}
+			else
+			{
+				$this->EE->db->where('channel_titles.status', "'open'", FALSE);
+			}
+
+			$this->EE->db->where('category_posts.cat_id IS NOT NULL', NULL, FALSE);
+
+		}
+		
+		// Filter by category IDs in "show" param.
+
+		if ($this->params['show'] !== FALSE)
+		{
+			list($cat_ids, $in) = $this->H->explode_list_param($this->params['show']);
+			$this->EE->db->{($in ? 'where_in' : 'where_not_in')}('c.cat_id', $cat_ids);
+			unset($cat_ids, $in);
+		}
+
+		// If parent_only param is set, display only root categories (i.e. those without parents).
+
+		if ($this->params['parent_only'] == "yes")
+		{
+			$this->EE->db->where('c.parent_id', 0);
+		}
+
+		// Respect the cat_order!
+
+		$this->EE->db->order_by('c.group_id ASC, c.parent_id ASC, c.cat_order ASC');
+	 	
+	 	$this->category_data_q = $this->EE->db->get();		
+
+		// ---------------------------------------------
+		//	Bail if no results
+		// ---------------------------------------------
+
+		if ($this->category_data_q->num_rows() < 1)
+		{
+			return $this->EE->TMPL->no_results();
+		}
+		
+		// ---------------------------------------------
+		//	Get all the category data into a nice array, keyed by cat_id
+		// ---------------------------------------------
+
+		foreach($this->category_data_q->result_array() as $q_row)
+		{
+			// Add the category data to category_data_a (but only once per cat_id)
+			if ( ! isset($this->category_data_a[ $q_row['cat_id'] ]) )
+			{
+				$this->category_data_a[$q_row['cat_id']] = $q_row;
+			}
+		}
+		
+		// ---------------------------------------------
+		//	Assemble output string
+		// ---------------------------------------------
+		
+		$return_string = "";
+		
+		foreach($this->category_data_q->result() as $q_row)
+		{
+			
+			$return_string .= $this->_parse_cat_row($q_row->cat_id);
+			
+		}
+
+		if ($this->params['backspace'])
+		{
+			$b = (int)$this->EE->params['backspace'];
+			
+			$return_string = substr($return_string, 0, - $b);
+		}
+		
+		return $return_string;
+		
+	}
+
+
+	/**
+	* ==============================================
+	* Parse category row
+	* ==============================================
+	*
+	* @access public
+	* @return string
+	*/
+	private function _parse_cat_row($cat_id="0")
+	{
+
+		// ---------------------------------------------
+		//	Initialize typography class
+		// ---------------------------------------------
+		
+		// $this->EE->load->library('typography');
+		// $this->EE->typography->initialize();
+		// $this->EE->typography->convert_curly = FALSE;
+		
+		// ---------------------------------------------
+		//	If necessary, prep Custom Category Fields
+		// ---------------------------------------------
+	
+		if ($this->enable['category_fields'])
+		{	
+			$this->_process_custom_category_fields();
+		}
+		
+		// ---------------------------------------------
+		//	If necessary, prep Custom Channel Fields
+		// ---------------------------------------------
+	
+		if ($this->enable['custom_fields'])
+		{	
+			$this->_process_custom_channel_fields();
+		}
+
+		// ---------------------------------------------
+		//	Fetch category vars, and fix a few field names
+		// ---------------------------------------------
+		
+		$category_vars = array($this->category_data_a[$cat_id]);
+		
+		$tag_name_replacements = array(
+			'cat_id' => "category_id",
+			'cat_name' => "category_name",
+			'cat_url_title' => "category_url_title",
+			'cat_description' => "category_description",
+			'cat_image' => "category_image"
+		);
+		
+		foreach ($tag_name_replacements as $key => $val)
+		{
+			$category_vars[0][$val] = isset($category_vars[0][$key]) ? $category_vars[0][$key] : "" ;
+		}
+		
+		// ---------------------------------------------
+		//	Call upon EE's built-in var-parsing awesomeness
+		// ---------------------------------------------
+
+		$variables = array();
+		$variables[0] = array();
+
+		$variables[0]['category'] = $category_vars;
+		
+		$variables[0]['entries'] = array();
+		
+		foreach ($this->entries_by_category_a[$cat_id] as $entry_array)
+		{
+			$variables[0]['entries'][] = $this->entry_data_a[$entry_array];
+		}
+		
+		// FOR DEBUG ONLY
+		// return $this->spit($variables) ;
+		
+		return $this->EE->TMPL->parse_variables($this->EE->TMPL->tagdata, $variables);
+		
+	} // END _parse_cat_row()
+	
+
+	/**
+	* ==============================================
+	* Process custom category fields
+	* ==============================================
+	*
+	* @access private
+	* @return void
+	*/
+	private function _process_custom_category_fields()
+	{
+
+		// ---------------------------------------------
+		//	Fetch category field names and IDs
+		// ---------------------------------------------
+
+		$this->EE->db->select('field_id, field_name')
+			->from('category_fields')
+			->where('site_id', $this->params['site_id'])
+			->where_in('group_id', explode("|",$this->group_id));
+		
+		$this->category_fields_info_q = $this->EE->db->get();
+		
+		// ---------------------------------------------
+		//	Make sure there are results before we try to process them...
+		// ---------------------------------------------			
+		
+		if ($this->category_fields_info_q->num_rows() < 0)
+		{
+			// No Custom Category Field results
+			// return;
+		}
+		
+		// ---------------------------------------------
+		//	Iterate over the category_data_a, processing/replacing custom fields
+		// ---------------------------------------------	
+		
+		// echo $this->spit($this->category_fields_info_q->result_array());
+		
+		foreach ($this->category_fields_info_q->result() as $field)
+		{
+			
+			foreach($this->category_data_a as $key => $data_row)
+			{
+				
+				if ( isset($data_row[ 'field_id_'.$field->field_id ]) )
+				{
+					
+					$this->category_data_a[$key]["".$field->field_name] = array();
+					
+					$this->category_data_a[$key][ $field->field_name ][] = $data_row[ 'field_id_'.$field->field_id ];
+					
+					$this->category_data_a[$key][ $field->field_name ][] = array(
+						'text_format'		=> $data_row['field_ft_'.$field->field_id],
+						'html_format'		=> $data_row['field_html_formatting'],
+						'auto_links'		=> 'n',
+						'allow_img_url'	=> 'y'
+					);
+					
+				}
+				
+				else
+				{
+					$this->category_data_a[$key]["".$field->field_name] = "";
+				}
+				
+			}
+
+		}
+
+	} // END _process_custom_cat_fields
+
+
+
+	/**
+	* ==============================================
+	* Process custom channel fields
+	* ==============================================
+	*
+	* @access private
+	* @return void
+	*/
+	private function _process_custom_channel_fields()
+	{
+		return;
+	}
 
 
 
@@ -592,10 +976,10 @@ class Category_sorted_entries {
 	/**  Category archives
 	/** ------------------------------------------------------------------------*/
 
-	public function category_archive()
+	public function category_archive_old()
 	{
 
-		$result = $this->EE->db->query($sql);
+		$result = $this->entry_data_q;
 		$channel_array = array();
 
 		$parent_only = ($this->EE->TMPL->fetch_param('parent_only') == 'yes') ? TRUE : FALSE;
@@ -658,7 +1042,7 @@ class Category_sorted_entries {
 		////////////////////////////////////////////////////////////////////////////
 		////////////////////////////////////////////////////////////////////////////
 		
-		NESTED
+		// NESTED
 		
 		////////////////////////////////////////////////////////////////////////////
 		////////////////////////////////////////////////////////////////////////////
@@ -741,549 +1125,11 @@ class Category_sorted_entries {
 			}
 		}
 
-
-		////////////////////////////////////////////////////////////////////////////
-		////////////////////////////////////////////////////////////////////////////
-		////////////////////////////////////////////////////////////////////////////
-		
-		LINEAR
-		
-		////////////////////////////////////////////////////////////////////////////
-		////////////////////////////////////////////////////////////////////////////
-		////////////////////////////////////////////////////////////////////////////		
-
-
-
-		else
-		{
-			// fetch category field names and id's
-
-			if ($this->enable['category_fields'] === TRUE)
-			{
-				$query = $this->EE->db->query("SELECT field_id, field_name FROM exp_category_fields
-									WHERE site_id IN ('".implode("','", $this->EE->TMPL->site_ids)."')
-									AND group_id IN ('".str_replace('|', "','", $this->EE->db->escape_str($group_id))."')
-									AND group_id NOT IN ('WOOHOO-LINE-372')");
-
-				if ($query->num_rows() > 0)
-				{
-					foreach ($query->result_array() as $row)
-					{
-						$this->catfields[] = array('field_name' => $row['field_name'], 'field_id' => $row['field_id']);
-					}
-				}
-
-				$field_sqla = ", cg.field_html_formatting, fd.* ";
-				$field_sqlb = " LEFT JOIN exp_category_field_data AS fd ON fd.cat_id = c.cat_id
-								LEFT JOIN exp_category_groups AS cg ON cg.group_id = c.group_id ";
-			}
-			else
-			{
-				$field_sqla = '';
-				$field_sqlb = '';
-			}
-
-			$sql = "SELECT DISTINCT (c.cat_id), c.cat_name, c.cat_url_title, c.cat_description, c.cat_image, c.group_id, c.parent_id {$field_sqla}
-					FROM (exp_categories AS c";
-
-			if ($this->EE->TMPL->fetch_param('show_empty') != 'no' AND $channel_id != '')
-			{
-				$sql .= ", exp_category_posts ";
-			}
-
-			$sql .= ") {$field_sqlb}";
-
-			if ($this->EE->TMPL->fetch_param('show_empty') == 'no')
-			{
-				$sql .= " LEFT JOIN exp_category_posts ON c.cat_id = exp_category_posts.cat_id ";
-
-				if ($channel_id != '')
-				{
-					$sql .= " LEFT JOIN exp_channel_titles ON exp_category_posts.entry_id = exp_channel_titles.entry_id ";
-				}
-			}
-			
-			$sql .= " WHERE c.group_id IN ('".str_replace('|', "','", $this->EE->db->escape_str($group_id))."')
-						AND c.group_id NOT IN ('WOOHOO-LINE-413') ";
-			
-			/* */
-			// FILTER BY ENTRY LISTS
-			// Tack on a bit of query to include only the entries that are/aren't in the set we have specied.
-			// (This block takes effect when style="linear" is used.)
-			// ------------
-			if ($this->filter_by_entries_not)
-			{
-				$sql .= "AND exp_category_posts.entry_id NOT IN ('".implode("','", $this->entries_not_list)."') ";
-			}
-			if ($this->filter_by_entries)
-			{
-				$sql .= "AND exp_category_posts.entry_id IN ('".implode("','", $this->entries_list)."') ";
-			}
-			// ------------
-			// end filter block
-			/* */			
-			
-
-			if ($this->EE->TMPL->fetch_param('show_empty') == 'no')
-			{
-				if ($channel_id != '')
-				{
-					$sql .= "AND exp_channel_titles.channel_id = '".$channel_id."' ";
-				}
-				else
-				{
-					$sql .= " AND exp_channel_titles.site_id IN ('".implode("','", $this->EE->TMPL->site_ids)."') ";
-				}
-
-				if ($status = $this->EE->TMPL->fetch_param('status'))
-				{
-					$status = str_replace('Open',	'open',	$status);
-					$status = str_replace('Closed', 'closed', $status);
-
-					$sql .= $this->EE->functions->sql_andor_string($status, 'exp_channel_titles.status');
-				}
-				else
-				{
-					$sql .= "AND exp_channel_titles.status = 'open' ";
-				}
-
-				if ($this->EE->TMPL->fetch_param('show_empty') == 'no')
-				{
-					$sql .= "AND exp_category_posts.cat_id IS NOT NULL ";
-				}
-			}
-
-			if ($this->EE->TMPL->fetch_param('show') !== FALSE)
-			{
-				$sql .= $this->EE->functions->sql_andor_string($this->EE->TMPL->fetch_param('show'), 'c.cat_id').' ';
-			}
-
-			if ($parent_only == TRUE)
-			{
-				$sql .= " AND c.parent_id = 0";
-			}
-
-			$sql .= " ORDER BY c.group_id, c.parent_id, c.cat_order";
-		 	$query = $this->EE->db->query($sql);
-
-			if ($query->num_rows() > 0)
-			{
-				$this->EE->load->library('typography');
-				$this->EE->typography->initialize();
-
-				$this->EE->typography->convert_curly = FALSE;
-
-				$used = array();
-
-				foreach($query->result_array() as $row)
-				{
-					if ( ! isset($used[$row['cat_name']]))
-					{
-						$chunk = $cat_chunk;
-
-						$cat_vars = array('category_name'			=> $row['cat_name'],
-										  'category_url_title'		=> $row['cat_url_title'],
-										  'category_description'	=> $row['cat_description'],
-										  'category_image'			=> $row['cat_image'],
-										  'category_id'				=> $row['cat_id'],
-										  'parent_id'				=> $row['parent_id']
-										);
-
-						foreach ($this->catfields as $v)
-						{
-							$cat_vars[$v['field_name']] = ( ! isset($row['field_id_'.$v['field_id']])) ? '' : $row['field_id_'.$v['field_id']];
-						}
-
-						$chunk = $this->EE->functions->prep_conditionals($chunk, $cat_vars);
-
-						$chunk = str_replace( array(LD.'category_id'.RD,
-													LD.'category_name'.RD,
-													LD.'category_url_title'.RD,
-													LD.'category_image'.RD,
-													LD.'category_description'.RD,
-													LD.'parent_id'.RD),
-											  array($row['cat_id'],
-											  		$row['cat_name'],
-													$row['cat_url_title'],
-											  		$row['cat_image'],
-											  		$row['cat_description'],
-													$row['parent_id']),
-											  $chunk);
-
-						foreach($c_path as $ckey => $cval)
-						{
-							$cat_seg = ($this->use_category_names == TRUE) ? $this->reserved_cat_segment.'/'.$row['cat_url_title'] : 'C'.$row['cat_id'];
-							$chunk = str_replace($ckey, $this->EE->functions->remove_double_slashes($cval.'/'.$cat_seg), $chunk);
-						}
-
-						// parse custom fields
-
-						foreach($this->catfields as $cfv)
-						{
-							if (isset($row['field_id_'.$cfv['field_id']]) AND $row['field_id_'.$cfv['field_id']] != '')
-							{
-								$field_content = $this->EE->typography->parse_type($row['field_id_'.$cfv['field_id']],
-																			array(
-																				  'text_format'		=> $row['field_ft_'.$cfv['field_id']],
-																				  'html_format'		=> $row['field_html_formatting'],
-																				  'auto_links'		=> 'n',
-																				  'allow_img_url'	=> 'y'
-																				)
-																		);
-								$chunk = str_replace(LD.$cfv['field_name'].RD, $field_content, $chunk);
-							}
-							else
-							{
-								// garbage collection
-								$chunk = str_replace(LD.$cfv['field_name'].RD, '', $chunk);
-							}
-						}
-
-						$str .= $chunk;
-						$used[$row['cat_name']] = TRUE;
-					}
-
-					foreach($result->result_array() as $trow)
-					{
-						if ($trow['cat_id'] == $row['cat_id'])
-						{
-							$chunk = str_replace(array(LD.'title'.RD, LD.'category_name'.RD),
-												 array($trow['title'],$row['cat_name']),
-												 $tit_chunk);
-												 
-							/* */
-							// {entry_id}, {url_title}
-							// An extra replace statement to allow display of entry_id and url_title variables.
-							// (This block takes effect when style="linear" is used.)
-							// ------------
-							
-							$chunk = str_replace(array(LD.'entry_id'.RD, LD.'url_title'.RD),
-												 array($trow['entry_id'],$trow['url_title']),
-												 $chunk);
-												 
-							// ------------
-							// end {entry_id}, {url_title} replacement
-							/* */	
-
-							foreach($t_path as $tkey => $tval)
-							{
-								$chunk = str_replace($tkey, $this->EE->functions->remove_double_slashes($tval.'/'.$trow['url_title']), $chunk);
-							}
-
-							foreach($id_path as $tkey => $tval)
-							{
-								$chunk = str_replace($tkey, $this->EE->functions->remove_double_slashes($tval.'/'.$trow['entry_id']), $chunk);
-							}
-
-							foreach($this->EE->TMPL->var_single as $key => $val)
-							{
-								if (isset($entry_date[$key]))
-								{
-									$val = str_replace($entry_date[$key], $this->EE->localize->convert_timestamp($entry_date[$key], $trow['entry_date'], TRUE), $val);
-
-									$chunk = $this->EE->TMPL->swap_var_single($key, $val, $chunk);
-								}
-
-							}
-
-							$str .= $chunk;
-						}
-					}
-				}
-			}
-
-			if ($this->EE->TMPL->fetch_param('backspace'))
-			{
-				$str = substr($str, 0, - $this->EE->TMPL->fetch_param('backspace'));
-			}
-		}
-
 		return $str;
 	}
 
 
-	/**
-	* ==============================================
-	* _Linear
-	* ==============================================
-	*
-	* @access public
-	* @return string
-	*/
-	private function _linear()
-	{
-	
-		if ($this->enable['category_fields'])
-		{
-		
-			$this->EE->db->select('field_id, field_name')
-				->from('category_fields')
-				->where('site_id', $this->params['site_id'])
-				->where_in('group_id', explode("|",$this->group_id));
-			
-			$this->category_fields_info_q = $this->EE->db->get();
-			
-			if ($this->category_fields_info_q->num_rows() > 0)
-			{
-				foreach ($this->category_fields_info_q->result_array() as $row)
-				{
-					$this->category_fields_info[$row['field_id']] = array(
-						'field_name' => $row['field_name'],
-						'field_id' => $row['field_id']
-					);
-				}
-			}
-		
-		}
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		// fetch category field names and id's
 
-		if ($this->enable['category_fields'] === TRUE)
-		{
-
-			if ($query->num_rows() > 0)
-			{
-				foreach ($query->result_array() as $row)
-				{
-					$this->catfields[] = array('field_name' => $row['field_name'], 'field_id' => $row['field_id']);
-				}
-			}
-
-			$field_sqla = ", cg.field_html_formatting, fd.* ";
-			$field_sqlb = " LEFT JOIN exp_category_field_data AS fd ON fd.cat_id = c.cat_id
-							LEFT JOIN exp_category_groups AS cg ON cg.group_id = c.group_id ";
-		}
-		else
-		{
-			$field_sqla = '';
-			$field_sqlb = '';
-		}
-
-		$sql = "SELECT DISTINCT (c.cat_id), c.cat_name, c.cat_url_title, c.cat_description, c.cat_image, c.group_id, c.parent_id {$field_sqla}
-				FROM (exp_categories AS c";
-
-		if ($this->EE->TMPL->fetch_param('show_empty') != 'no' AND $channel_id != '')
-		{
-			$sql .= ", exp_category_posts ";
-		}
-
-		$sql .= ") {$field_sqlb}";
-
-		if ($this->EE->TMPL->fetch_param('show_empty') == 'no')
-		{
-			$sql .= " LEFT JOIN exp_category_posts ON c.cat_id = exp_category_posts.cat_id ";
-
-			if ($channel_id != '')
-			{
-				$sql .= " LEFT JOIN exp_channel_titles ON exp_category_posts.entry_id = exp_channel_titles.entry_id ";
-			}
-		}
-		
-		$sql .= " WHERE c.group_id IN ('".str_replace('|', "','", $this->EE->db->escape_str($group_id))."')
-					AND c.group_id NOT IN ('WOOHOO-LINE-413') ";
-		
-		/* */
-		// FILTER BY ENTRY LISTS
-		// Tack on a bit of query to include only the entries that are/aren't in the set we have specied.
-		// (This block takes effect when style="linear" is used.)
-		// ------------
-		if ($this->filter_by_entries_not)
-		{
-			$sql .= "AND exp_category_posts.entry_id NOT IN ('".implode("','", $this->entries_not_list)."') ";
-		}
-		if ($this->filter_by_entries)
-		{
-			$sql .= "AND exp_category_posts.entry_id IN ('".implode("','", $this->entries_list)."') ";
-		}
-		// ------------
-		// end filter block
-		/* */			
-		
-
-		if ($this->EE->TMPL->fetch_param('show_empty') == 'no')
-		{
-			if ($channel_id != '')
-			{
-				$sql .= "AND exp_channel_titles.channel_id = '".$channel_id."' ";
-			}
-			else
-			{
-				$sql .= " AND exp_channel_titles.site_id IN ('".implode("','", $this->EE->TMPL->site_ids)."') ";
-			}
-
-			if ($status = $this->EE->TMPL->fetch_param('status'))
-			{
-				$status = str_replace('Open',	'open',	$status);
-				$status = str_replace('Closed', 'closed', $status);
-
-				$sql .= $this->EE->functions->sql_andor_string($status, 'exp_channel_titles.status');
-			}
-			else
-			{
-				$sql .= "AND exp_channel_titles.status = 'open' ";
-			}
-
-			if ($this->EE->TMPL->fetch_param('show_empty') == 'no')
-			{
-				$sql .= "AND exp_category_posts.cat_id IS NOT NULL ";
-			}
-		}
-
-		if ($this->EE->TMPL->fetch_param('show') !== FALSE)
-		{
-			$sql .= $this->EE->functions->sql_andor_string($this->EE->TMPL->fetch_param('show'), 'c.cat_id').' ';
-		}
-
-		if ($parent_only == TRUE)
-		{
-			$sql .= " AND c.parent_id = 0";
-		}
-
-		$sql .= " ORDER BY c.group_id, c.parent_id, c.cat_order";
-	 	$query = $this->EE->db->query($sql);
-
-		if ($query->num_rows() > 0)
-		{
-			$this->EE->load->library('typography');
-			$this->EE->typography->initialize();
-
-			$this->EE->typography->convert_curly = FALSE;
-
-			$used = array();
-
-			foreach($query->result_array() as $row)
-			{
-				if ( ! isset($used[$row['cat_name']]))
-				{
-					$chunk = $cat_chunk;
-
-					$cat_vars = array('category_name'			=> $row['cat_name'],
-									  'category_url_title'		=> $row['cat_url_title'],
-									  'category_description'	=> $row['cat_description'],
-									  'category_image'			=> $row['cat_image'],
-									  'category_id'				=> $row['cat_id'],
-									  'parent_id'				=> $row['parent_id']
-									);
-
-					foreach ($this->catfields as $v)
-					{
-						$cat_vars[$v['field_name']] = ( ! isset($row['field_id_'.$v['field_id']])) ? '' : $row['field_id_'.$v['field_id']];
-					}
-
-					$chunk = $this->EE->functions->prep_conditionals($chunk, $cat_vars);
-
-					$chunk = str_replace( array(LD.'category_id'.RD,
-												LD.'category_name'.RD,
-												LD.'category_url_title'.RD,
-												LD.'category_image'.RD,
-												LD.'category_description'.RD,
-												LD.'parent_id'.RD),
-										  array($row['cat_id'],
-										  		$row['cat_name'],
-												$row['cat_url_title'],
-										  		$row['cat_image'],
-										  		$row['cat_description'],
-												$row['parent_id']),
-										  $chunk);
-
-					foreach($c_path as $ckey => $cval)
-					{
-						$cat_seg = ($this->use_category_names == TRUE) ? $this->reserved_cat_segment.'/'.$row['cat_url_title'] : 'C'.$row['cat_id'];
-						$chunk = str_replace($ckey, $this->EE->functions->remove_double_slashes($cval.'/'.$cat_seg), $chunk);
-					}
-
-					// parse custom fields
-
-					foreach($this->catfields as $cfv)
-					{
-						if (isset($row['field_id_'.$cfv['field_id']]) AND $row['field_id_'.$cfv['field_id']] != '')
-						{
-							$field_content = $this->EE->typography->parse_type($row['field_id_'.$cfv['field_id']],
-																		array(
-																			  'text_format'		=> $row['field_ft_'.$cfv['field_id']],
-																			  'html_format'		=> $row['field_html_formatting'],
-																			  'auto_links'		=> 'n',
-																			  'allow_img_url'	=> 'y'
-																			)
-																	);
-							$chunk = str_replace(LD.$cfv['field_name'].RD, $field_content, $chunk);
-						}
-						else
-						{
-							// garbage collection
-							$chunk = str_replace(LD.$cfv['field_name'].RD, '', $chunk);
-						}
-					}
-
-					$str .= $chunk;
-					$used[$row['cat_name']] = TRUE;
-				}
-
-				foreach($result->result_array() as $trow)
-				{
-					if ($trow['cat_id'] == $row['cat_id'])
-					{
-						$chunk = str_replace(array(LD.'title'.RD, LD.'category_name'.RD),
-											 array($trow['title'],$row['cat_name']),
-											 $tit_chunk);
-											 
-						/* */
-						// {entry_id}, {url_title}
-						// An extra replace statement to allow display of entry_id and url_title variables.
-						// (This block takes effect when style="linear" is used.)
-						// ------------
-						
-						$chunk = str_replace(array(LD.'entry_id'.RD, LD.'url_title'.RD),
-											 array($trow['entry_id'],$trow['url_title']),
-											 $chunk);
-											 
-						// ------------
-						// end {entry_id}, {url_title} replacement
-						/* */	
-
-						foreach($t_path as $tkey => $tval)
-						{
-							$chunk = str_replace($tkey, $this->EE->functions->remove_double_slashes($tval.'/'.$trow['url_title']), $chunk);
-						}
-
-						foreach($id_path as $tkey => $tval)
-						{
-							$chunk = str_replace($tkey, $this->EE->functions->remove_double_slashes($tval.'/'.$trow['entry_id']), $chunk);
-						}
-
-						foreach($this->EE->TMPL->var_single as $key => $val)
-						{
-							if (isset($entry_date[$key]))
-							{
-								$val = str_replace($entry_date[$key], $this->EE->localize->convert_timestamp($entry_date[$key], $trow['entry_date'], TRUE), $val);
-
-								$chunk = $this->EE->TMPL->swap_var_single($key, $val, $chunk);
-							}
-
-						}
-
-						$str .= $chunk;
-					}
-				}
-			}
-		}
-
-		if ($this->EE->TMPL->fetch_param('backspace'))
-		{
-			$str = substr($str, 0, - $this->EE->TMPL->fetch_param('backspace'));
-		}
-	
-	} // END _linear()
 
 
 
@@ -2002,46 +1848,11 @@ class Category_sorted_entries {
 	* @return string
 	*/
 	
-	public function spit_enable() {
+	public function spit($obj="") {
 	
-		return '<pre>' . print_r($this->enable, TRUE) . '</pre>';
+		return '<pre>' . print_r($obj, TRUE) . '</pre>';
 	
-	} // END spit_enable()
-	
-	public function spit_params() {
-	
-		return '<pre>' . print_r($this->params, TRUE) . '</pre>';
-	
-	} // END spit_params()
-
-	public function spit_entry_data_q() {
-	
-		return '<pre>' . print_r($this->entry_data_q, TRUE) . '</pre>';
-	
-	} // END spit_entry_data_q()
-	
-	public function spit_categories_data_q() {
-	
-		return '<pre>' . print_r($this->categories_data_q, TRUE) . '</pre>';
-	
-	} // END spit_categories_data_q()
-	
-	public function spit_debug() {
-	
-		$a = array();
-		$b = array();
-		$b[] = "";
-		$b[] = "a";
-		$c = 'array_merge';
-		$d = $c($a, $b);
-		
-		$e = "";
-		$e = explode("|", $e);
-		
-		return '<pre>' . print_r($e, TRUE) . '</pre>';
-	
-	} // END spit_debug()
-
+	} // END spit()
 
 
 } // END Category_sorted_entries class
