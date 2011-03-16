@@ -183,7 +183,7 @@ class Category_sorted_entries {
 	* @access private
 	* @var boolean
 	*/
-	private $debug_on = TRUE;
+	private $dev_on = TRUE;
 
 	/**
 	* Other misc variables
@@ -196,7 +196,7 @@ class Category_sorted_entries {
 	var $channel_id;
 
 	var $assigned_categories_a = array();
-	var $displayed_categories_a = array();
+	var $selected_categories_a = array();
 	var $category_parents_a = array();
 
 	// These are used for creating URIs
@@ -319,11 +319,11 @@ class Category_sorted_entries {
 			//	During debugging, also output $params and $enable arrays
 			// ---------------------------------------------
 			
-			if ($this->debug_on)
+			if ($this->dev_on)
 			{
-				// $this->return_data .= "<br /><hr />" ;
-				// $this->return_data .= $this->spit_params();
-				// $this->return_data .= $this->spit_enable();	
+				$this->return_data .= "<br /><hr />" ;
+				$this->return_data .= $this->H->spit($this->params);
+				$this->return_data .= $this->H->spit($this->enable);
 			}
 			
 		}
@@ -657,7 +657,7 @@ class Category_sorted_entries {
 		// ---------------------------------------------
 		
 		// FOR DEBUGGING
-		// return $this->spit($this->entry_data_q->result_array());
+		// return $this->H->spit($this->entry_data_q->result_array());
 		
 		return $this->_categories();
 
@@ -677,14 +677,43 @@ class Category_sorted_entries {
 	{
 
 		// ---------------------------------------------
+		//	If we aren't going to show empty categories...
+		// ---------------------------------------------
+		
+		if ($this->params['show_empty'] == 'no')
+		{
+
+			// ---------------------------------------------
+			//	...we only need to query categories we know are assigned to our selected entries...
+			// ---------------------------------------------
+			
+			$this->selected_categories_a = array_unique($this->assigned_categories_a);
+			
+			// ---------------------------------------------
+			//	...unless we also need their parents for display in a tree. ("Categories are not assexual.")
+			// ---------------------------------------------
+			
+			if ($this->params['style'] == 'nested')
+			{
+
+				foreach ($this->selected_categories_a as $cat)
+				{
+					$this->_include_parents($cat, $this->category_parents_a);
+				}
+
+				$this->selected_categories_a = array_unique($this->selected_categories_a);
+
+			}
+
+		}
+
+		// ---------------------------------------------
 		//	Massive category data query!
 		// ---------------------------------------------
 		
 		$select_sql = 'DISTINCT (c.cat_id), c.cat_name, c.cat_url_title, c.cat_description, c.cat_image, c.group_id, c.parent_id' 
 			. ( $this->enable['category_fields'] ? ", cg.field_html_formatting, fd.*" : "" );
-		// $from_sql = 'categories c'
-		// 	. ( ($this->params['show_empty'] != 'no' AND $this->channel_id != '') ? ", category_posts category_posts" : "" );
-		
+
 		$this->EE->db->select($select_sql)
 			->from('categories c');
 
@@ -696,7 +725,7 @@ class Category_sorted_entries {
 			
 		if ($this->params['show_empty'] == 'no')
 		{
-			$this->EE->db->where_in('c.cat_id', $this->assigned_categories_a);
+			$this->EE->db->where_in('c.cat_id', $this->selected_categories_a);
 		}
 
 		// Only get categories from the groups we want to display.
@@ -898,14 +927,6 @@ class Category_sorted_entries {
 	{
 
 		// ---------------------------------------------
-		//	Initialize typography class
-		// ---------------------------------------------
-		
-		// $this->EE->load->library('typography');
-		// $this->EE->typography->initialize();
-		// $this->EE->typography->convert_curly = FALSE;
-		
-		// ---------------------------------------------
 		//	If necessary, prep Custom Category Fields
 		// ---------------------------------------------
 	
@@ -950,7 +971,7 @@ class Category_sorted_entries {
 		}
 		
 		// FOR DEBUG ONLY
-		// return $this->spit($variables) ;
+		// return $this->H->spit($variables) ;
 		
 		return $this->EE->TMPL->parse_variables($this->EE->TMPL->tagdata, $variables);
 		
@@ -992,8 +1013,6 @@ class Category_sorted_entries {
 		// ---------------------------------------------
 		//	Iterate over the category_data_a, processing/replacing custom fields
 		// ---------------------------------------------	
-		
-		// echo $this->spit($this->category_fields_info_q->result_array());
 		
 		foreach ($this->category_fields_info_q->result() as $field)
 		{
@@ -1222,36 +1241,9 @@ class Category_sorted_entries {
 			$$val = ( ! isset($cdata[$val])) ? '' : $cdata[$val];
 		}
 
-		if ($group_id == '')
-		{
-			return FALSE;
-		}
 
-		if ($this->enable['category_fields'] === TRUE)
-		{
-			$query = $this->EE->db->query("SELECT field_id, field_name
-								FROM exp_category_fields
-								WHERE site_id IN ('".implode("','", $this->EE->TMPL->site_ids)."')
-								AND group_id IN ('".str_replace('|', "','", $this->EE->db->escape_str($group_id))."')
-								AND group_id NOT IN ('WOOHOO-LINE-605')");
 
-			if ($query->num_rows() > 0)
-			{
-				foreach ($query->result_array() as $row)
-				{
-					$this->catfields[] = array('field_name' => $row['field_name'], 'field_id' => $row['field_id']);
-				}
-			}
 
-			$field_sqla = ", cg.field_html_formatting, fd.* ";
-			$field_sqlb = " LEFT JOIN exp_category_field_data AS fd ON fd.cat_id = c.cat_id
-							LEFT JOIN exp_category_groups AS cg ON cg.group_id = c.group_id";
-		}
-		else
-		{
-			$field_sqla = '';
-			$field_sqlb = '';
-		}
 
 		/** -----------------------------------
 		/**  Are we showing empty categories
@@ -1267,29 +1259,34 @@ class Category_sorted_entries {
 		// to entries, and lastly we'll recursively run up the tree and fetch all parents.
 		// Follow that?  No?  Me neither...
 
-		if ($show_empty == 'no')
+		if ($this->params['show_empty'] == 'no')
 		{
-			// First we'll grab all category ID numbers
 
-			$query = $this->EE->db->query("SELECT cat_id, parent_id FROM exp_categories
-								 WHERE group_id IN ('".str_replace('|', "','", $this->EE->db->escape_str($group_id))."')
-								 AND group_id NOT IN ('WOOHOO-LINE-635')
-								 ORDER BY group_id, parent_id, cat_order");
+			// ---------------------------------------------
+			//	Grab cat_id and parent_id for every category in our desired group(s)
+			// ---------------------------------------------
 
-			$all = array();
+			$this->EE->db->select('SELECT cat_id, parent_id')
+				->from('categories')
+				->where_in('group_id', explode("|", $this->group_id))
+				->order_by('group_id ASC, parent_id ASC, cat_order ASC');
+
+			$category_parents_q = $this->EE->db->get();
 
 			// No categories exist?  Back to the barn for the night..
-			if ($query->num_rows() == 0)
+			if ($category_parents_q->num_rows() < 1)
 			{
 				return FALSE;
 			}
 
-			foreach($query->result_array() as $row)
+			foreach($category_parents_q->result() as $cat)
 			{
-				$all[$row['cat_id']] = $row['parent_id'];
+				$this->category_parents_a[$cat->cat_id] = $cat->parent_id;
 			}
 
-			// Next we'l grab only the assigned categories
+		//}
+
+			// Next we'll grab only the assigned categories
 
 			$sql = "SELECT DISTINCT(exp_categories.cat_id), parent_id
 					FROM exp_categories
@@ -1377,7 +1374,7 @@ class Category_sorted_entries {
 			{
 				if ($row['parent_id'] != 0)
 				{
-					$this->find_parent($row['parent_id'], $all);
+					$this->_include_parents($row['parent_id'], $all);
 				}
 
 				$this->cat_full_array[] = $row['cat_id'];
@@ -1847,16 +1844,14 @@ class Category_sorted_entries {
 	// This little recursive gem will travel up the
 	// category tree until it finds the category ID
 	// number of any parents.
-	function find_parent($parent, $all)
+	private function _include_parents($child, $all)
 	{
 		foreach ($all as $cat_id => $parent_id)
 		{
-			if ($parent == $cat_id)
+			if ($cat_id == $child && $parent_id != 0)
 			{
-				$this->cat_full_array[] = $cat_id;
-
-				if ($parent_id != 0)
-					$this->find_parent($parent_id, $all);
+				$this->selected_categories_a[] = $parent_id;
+				$this->_include_parents($parent_id, $all);
 			}
 		}
 	}
@@ -1904,23 +1899,6 @@ class Category_sorted_entries {
 		return $buffer;
 		
 	} // END usage()
-
-
-
-	/**
-	* ==============================================
-	* Debug functions
-	* ==============================================
-	*
-	* @access public
-	* @return string
-	*/
-	
-	public function spit($obj="") {
-	
-		return '<pre>' . print_r($obj, TRUE) . '</pre>';
-	
-	} // END spit()
 
 
 } // END Category_sorted_entries class

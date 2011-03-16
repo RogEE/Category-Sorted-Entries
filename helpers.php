@@ -75,6 +75,25 @@ class Category_sorted_entries_helpers {
 		}
 		return $enabled ;
 	}
+
+
+
+	/**
+	* ==============================================
+	* Spit
+	* ==============================================
+	*
+	* For spitting out [nicely formatted] raw data during debugging
+	*
+	* @access public
+	* @return string
+	*/
+	public function spit($obj="") {
+	
+		return '<pre>' . print_r($obj, TRUE) . '</pre>';
+	
+	} // END spit()
+
 	
 
 	/**
