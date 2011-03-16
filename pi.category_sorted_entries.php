@@ -313,7 +313,7 @@ class Category_sorted_entries {
 			//	Launch it
 			// ---------------------------------------------
 
-			$this->return_data = $this->entries();
+			$this->return_data = $this->_entries();
 			
 			// ---------------------------------------------
 			//	During debugging, also output $params and $enable arrays
@@ -337,13 +337,11 @@ class Category_sorted_entries {
 	* Entries
 	* ==============================================
 	*
-	* @access public
+	* @access private
 	* @return string
 	*/
-	public function entries($str="")
+	private function _entries()
 	{
-	
-		$this->H->debug("Starting entries processing...");
 	
 		// ---------------------------------------------
 		//	Set category groups
@@ -387,8 +385,6 @@ class Category_sorted_entries {
 			unset($cat_group_q, $group_ids, $ids, $in);
 			
 		}
-		
-		$this->H->debug("Group IDs set: ".$this->group_id);
 		
 		// ---------------------------------------------
 		//	Bail out if there are no groups to display
@@ -646,39 +642,51 @@ class Category_sorted_entries {
      		$this->assigned_categories_a[] = $q_row['cat_id'] ;
      		
  		}
+
+		// ---------------------------------------------
+		//	If enabled, process Custom Channel Fields
+		// ---------------------------------------------
+	
+		if ($this->enable['custom_fields'])
+		{	
+			$this->_process_custom_channel_fields();
+		}
 		
-		// FOR DEBUG ONLY
-		return $this->spit($this->entry_data_q->result_array());
+		// ---------------------------------------------
+		//	Next stop: Categories!
+		// ---------------------------------------------
 		
-		// return $this->_linear() ;
+		// FOR DEBUGGING
+		// return $this->spit($this->entry_data_q->result_array());
+		
+		return $this->_categories();
 
 	} // END entries()	
 
 
 
-
 	/**
 	* ==============================================
-	* Linear display
+	* Categories
 	* ==============================================
 	*
-	* @access public
+	* @access private
 	* @return string
 	*/
-	private function _linear()
+	private function _categories()
 	{
-		
+
 		// ---------------------------------------------
 		//	Massive category data query!
 		// ---------------------------------------------
 		
 		$select_sql = 'DISTINCT (c.cat_id), c.cat_name, c.cat_url_title, c.cat_description, c.cat_image, c.group_id, c.parent_id' 
 			. ( $this->enable['category_fields'] ? ", cg.field_html_formatting, fd.*" : "" );
-		$from_sql = 'categories c'
-			. ( ($this->params['show_empty'] != 'no' AND $this->channel_id != '') ? ", category_posts category_posts" : "" );
+		// $from_sql = 'categories c'
+		// 	. ( ($this->params['show_empty'] != 'no' AND $this->channel_id != '') ? ", category_posts category_posts" : "" );
 		
 		$this->EE->db->select($select_sql)
-			->from($from_sql);
+			->from('categories c');
 
 		if ($this->enable['category_fields'])
 		{
@@ -688,58 +696,12 @@ class Category_sorted_entries {
 			
 		if ($this->params['show_empty'] == 'no')
 		{
-			$this->EE->db->join('category_posts category_posts', 'c.cat_id = category_posts.cat_id', 'LEFT');
-
-			if ($this->channel_id != '')
-			{
-				$this->EE->db->join('channel_titles channel_titles', 'category_posts.entry_id = channel_titles.entry_id', 'LEFT');
-			}
+			$this->EE->db->where_in('c.cat_id', $this->assigned_categories_a);
 		}
 
 		// Only get categories from the groups we want to display.
 
 		$this->EE->db->where_in('c.group_id', explode("|", $this->group_id));
-
-		// If the entry ID filter lists are not empty, use them to filter categories based on the entry IDs we have specified.
-
-		if ($this->entries_list)
-		{
-			$this->EE->db->where_in('category_posts.entry_id', $this->entries_list);
-		}
-		if ($this->entries_exclude_list)
-		{
-			$this->EE->db->where_not_in('category_posts.entry_id', $this->entries_exclude_list);
-		}
-
-		// Filter out cateogires not assigned to any entries
-
-		if ($this->params['show_empty'] == 'no')
-		{
-			if ($this->channel_id != '')
-			{
-				$this->EE->db->where('channel_titles.channel_id', $this->channel_id, FALSE);
-			}
-			else
-			{
-				$this->EE->db->where('channel_titles.site_id', $this->params['site_id']);
-			}
-
-			if ($this->params['status'])
-			{
-				$status = str_replace('Open', 'open', $this->params['status']);
-				$status = str_replace('Closed', 'closed', $status);
-				list($statuses, $in) = $this->H->explode_list_param($status);
-				$this->EE->db->{($in ? 'where_in' : 'where_not_in')}('channel_titles.status', $statuses);
-				unset($statuses, $in);
-			}
-			else
-			{
-				$this->EE->db->where('channel_titles.status', "'open'", FALSE);
-			}
-
-			$this->EE->db->where('category_posts.cat_id IS NOT NULL', NULL, FALSE);
-
-		}
 		
 		// Filter by category IDs in "show" param.
 
@@ -784,6 +746,26 @@ class Category_sorted_entries {
 				$this->category_data_a[$q_row['cat_id']] = $q_row;
 			}
 		}
+
+		// ---------------------------------------------
+		//	Figure out which style to output, and move on.
+		// ---------------------------------------------
+	
+		return $this->_linear();
+
+	} // end _categories()
+
+
+	/**
+	* ==============================================
+	* Linear display
+	* ==============================================
+	*
+	* @access public
+	* @return string
+	*/
+	private function _linear()
+	{
 		
 		// ---------------------------------------------
 		//	Assemble output string
@@ -930,15 +912,6 @@ class Category_sorted_entries {
 		if ($this->enable['category_fields'])
 		{	
 			$this->_process_custom_category_fields();
-		}
-		
-		// ---------------------------------------------
-		//	If necessary, prep Custom Channel Fields
-		// ---------------------------------------------
-	
-		if ($this->enable['custom_fields'])
-		{	
-			$this->_process_custom_channel_fields();
 		}
 
 		// ---------------------------------------------
