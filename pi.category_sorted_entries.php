@@ -74,7 +74,7 @@ class Category_sorted_entries {
 	* @var object
 	*/
 	private $EE;
-	
+
 	/**
 	* Instance of the helper class
 	*
@@ -90,7 +90,7 @@ class Category_sorted_entries {
 	* @var string
 	*/
 	public $return_data = "";
-	
+
 	/**
 	* Parameter data from template (NOT including "disable" param)
 	*
@@ -98,7 +98,7 @@ class Category_sorted_entries {
 	* @var string
 	*/
 	private $params = array();
-	
+
 	/**
 	* Enabled features, to be altered by the disable="" parameter
 	*
@@ -114,7 +114,7 @@ class Category_sorted_entries {
 	* @var object
 	*/
 	private $entry_data_q;
-	
+
 	/**
 	* Big complicated object containing category data from SQL query
 	*
@@ -130,7 +130,7 @@ class Category_sorted_entries {
 	* @var object
 	*/
 	private $category_fields_info_q;
-	
+
 	/**
 	* Big complicated object containing category field data from SQL query
 	*
@@ -154,7 +154,7 @@ class Category_sorted_entries {
 	* @var array
 	*/
 	private $category_data_a = array();
-	
+
 	/**
 	* Array containing lists of entry IDs for each category, keyed by cat_id
 	*
@@ -162,7 +162,7 @@ class Category_sorted_entries {
 	* @var array
 	*/
 	private $entries_by_category_a = array();
-	
+
 	/**
 	* Final variable replacement array
 	*
@@ -170,7 +170,7 @@ class Category_sorted_entries {
 	* @var array
 	* @see http://expressionengine.com/user_guide/development/usage/template.html#parsing_variables
 	*/
-	private $tag_vars_a = array();	
+	private $tag_vars_a = array();
 
 	/**
 	* Debug switch
@@ -188,9 +188,9 @@ class Category_sorted_entries {
 
 	var $entries_list = array();
 	var $entries_exclude_list = array();
-	
+
 	// Important numbers
-	
+
 	var $group_id;
 	var $channel_id;
 
@@ -204,7 +204,7 @@ class Category_sorted_entries {
 
 	var $reserved_cat_segment = "";
 	var $use_category_names = FALSE;
-	
+
 
 
 	/**
@@ -216,14 +216,14 @@ class Category_sorted_entries {
 	* @return      null
 	*/
 	public function Category_sorted_entries($str="") {
-	
+
 		$this->__construct($str);
-	
+
 	} // END Category_sorted_entries()
-	
+
 	public function __construct($str="")
 	{
-	
+
 		// ---------------------------------------------
 		//	Establish local references to EE object and helper class
 		// ---------------------------------------------
@@ -241,21 +241,21 @@ class Category_sorted_entries {
 		}
 		else
 		{
-	
+
 			// ---------------------------------------------
 			//	Default settings: Category trigger words / cat. name vs. cat ID
 			// ---------------------------------------------
-	
+
 			if ($this->EE->config->item("use_category_name") == 'y' && $this->EE->config->item("reserved_category_word") != '')
 			{
 				$this->use_category_names = $this->EE->config->item("use_category_name");
 				$this->reserved_cat_segment = $this->EE->config->item("reserved_category_word");
 			}
-	
+
 			// ---------------------------------------------
 			//	By default, everything is enabled.
 			// ---------------------------------------------
-	
+
 			$this->enable = array(
 				'category_fields' => TRUE,
 				'custom_fields' => TRUE,
@@ -316,9 +316,9 @@ class Category_sorted_entries {
 		}
 
 	} // END __construct()
-	
-	
-	
+
+
+
 	/**
 	* ==============================================
 	* Entries
@@ -329,7 +329,7 @@ class Category_sorted_entries {
 	*/
 	private function _entries()
 	{
-	
+
 		// ---------------------------------------------
 		//	Set category groups
 		// ---------------------------------------------
@@ -356,21 +356,21 @@ class Category_sorted_entries {
 		{
 
 			$group_ids = explode('|', $this->group_id);
-	
+
 			list($ids, $in) = $this->H->explode_list_param($this->params['display_by_group']);
-	
+
 			// Either remove $ids from $group_ids OR limit $group_ids to $ids
 			$method = $in ? 'array_intersect' : 'array_diff';
 
 			// Alter group_ids
 			$group_ids = $method($group_ids, $ids);
-	
+
 			// Replace with new group_id list
 			$this->group_id = implode("|", $group_ids);
-	
+
 			// Clean up
 			unset($cat_group_q, $group_ids, $ids, $in);
-	
+
 		}
 
 		// ---------------------------------------------
@@ -385,13 +385,13 @@ class Category_sorted_entries {
 
 		// ---------------------------------------------
 		//	Filter entries by entry_id
-		// ---------------------------------------------	
+		// ---------------------------------------------
 
 		if ($this->params['entry_id'] !== FALSE)
 		{
 
 			list($ids, $in) = $this->H->explode_list_param($this->params['entry_id']);
-	
+
 			// ---------------------------------------------
 			//	If there are entry IDs in the param, add them to the appropriate list.
 			// ---------------------------------------------
@@ -406,7 +406,7 @@ class Category_sorted_entries {
 				$this->entries_exclude_list = $ids;
 				$this->H->debug("Filter by entries: Entries_exclude_list = ".print_r($this->entries_exclude_list, TRUE));
 			}
-	
+
 			// Clean up
 			unset($ids, $in);
 
@@ -420,19 +420,19 @@ class Category_sorted_entries {
 		{
 
 			list($ids, $in) = $this->H->explode_list_param($this->params['category']);
-	
+
 			// ---------------------------------------------
 			//	Get a list of all the entries that match the param.
 			// ---------------------------------------------
-	
+
 			$this->EE->db->select('DISTINCT entry_id')
 				->from('category_posts')
 				->where_in('cat_id', $ids);
-		
-			$entries_by_category_q = $this->EE->db->get();	
-	
+
+			$entries_by_category_q = $this->EE->db->get();
+
 			$matched_entries = array();
-	
+
 			if ($entries_by_category_q->num_rows() > 0)
 			{
   				foreach ($entries_by_category_q->result() as $row)
@@ -450,29 +450,29 @@ class Category_sorted_entries {
 				$this->H->debug("No entries match the requested categories; returning no_results.");
 				return $this->EE->TMPL->no_results();
 			}
-	
+
 			// ---------------------------------------------
 			//	Add the matched entries to the appropriate filter list
 			// ---------------------------------------------
-	
+
 			if ($in)
 			{
 				// Either remove $ids from $entry_ids OR limit $entry_ids to $ids
 				$method = empty($this->entries_list) ? 'array_merge' : 'array_intersect';
 				// Alter entry_ids
 				$this->entries_list = $method($this->entries_list, $matched_entries);
-		
+
 				$this->H->debug("Filter by category: Entries list + " . $method . " + ".print_r($matched_entries, TRUE) . " = " . $this->entries_list, TRUE);
 			}
 			else {
 				$this->entries_exclude_list = array_merge($this->entries_exclude_list, $matched_entries);
-		
+
 				$this->H->debug("Filter by category: Entries exclude list + array_merge + ".print_r($matched_entries, TRUE) . " = " . $this->entries_exclude_list, TRUE);
 			}
-	
+
 			// Clean up
 			unset($entries_by_category_q, $matched_entries, $ids, $in);
-	
+
 		}
 
 		// ---------------------------------------------
@@ -607,7 +607,7 @@ class Category_sorted_entries {
 		{
 
 			// Add entry data to entry_data_a (but only once per entry_id).
-	
+
      		if ( ! isset($this->entry_data_a[ $q_row['entry_id'] ]) )
      		{
      			$this->entry_data_a[$q_row['entry_id']] = $q_row;
@@ -633,9 +633,9 @@ class Category_sorted_entries {
 		// ---------------------------------------------
 		//	If enabled, process Custom Channel Fields
 		// ---------------------------------------------
-	
+
 		if ($this->enable['custom_fields'])
-		{	
+		{
 			$this->_process_custom_channel_fields();
 		}
 
@@ -648,7 +648,7 @@ class Category_sorted_entries {
 
 		return $this->_categories();
 
-	} // END entries()	
+	} // END entries()
 
 
 
@@ -673,34 +673,34 @@ class Category_sorted_entries {
 			// ---------------------------------------------
 			//	...we only need to query categories we know are assigned to our selected entries...
 			// ---------------------------------------------
-	
+
 			$this->selected_categories_a = array_unique($this->assigned_categories_a);
-	
+
 			// ---------------------------------------------
 			//	...unless we also need their parents for display in a tree. ("Categories are not assexual.")
 			// ---------------------------------------------
-	
+
 			if ($this->params['style'] == 'nested')
 			{
 
 				// Grab cat_id and parent_id for every category in the specified group(s)
-	
+
 				$this->EE->db->select('cat_id, parent_id')
 					->from('categories')
 					->where_in('group_id', explode("|", $this->group_id))
 					->order_by('group_id ASC, parent_id ASC, cat_order ASC');
-	
+
 				$category_parents_q = $this->EE->db->get();
-	
+
 				// No categories exist? Back to the barn for the night..
-		
+
 				if ($category_parents_q->num_rows() < 1)
 				{
 					return $this->EE->TMPL->no_results();
 				}
-	
+
 				// Add all the kids and their parents to the big family list.
-	
+
 				foreach($category_parents_q->result() as $cat)
 				{
 					$this->category_parents_a[$cat->cat_id] = $cat->parent_id;
@@ -714,7 +714,7 @@ class Category_sorted_entries {
 				}
 
 				$this->selected_categories_a = array_unique($this->selected_categories_a);
-					
+
 			}
 
 		}
@@ -734,7 +734,7 @@ class Category_sorted_entries {
 			$this->EE->db->join('category_field_data AS fd', 'fd.cat_id = c.cat_id', 'LEFT');
 			$this->EE->db->join('category_groups AS cg', 'cg.group_id = c.group_id', 'LEFT');
 		}
-	
+
 		if ($this->params['show_empty'] == 'no')
 		{
 			$this->EE->db->where_in('c.cat_id', $this->selected_categories_a);
@@ -763,7 +763,7 @@ class Category_sorted_entries {
 		// Respect the cat_order!
 
 		$this->EE->db->order_by('c.group_id ASC, c.parent_id ASC, c.cat_order ASC');
-	 	
+	 
 	 	$this->category_data_q = $this->EE->db->get();
 
 		// ---------------------------------------------
@@ -791,16 +791,16 @@ class Category_sorted_entries {
 		// ---------------------------------------------
 		//	If necessary, prep Custom Category Fields
 		// ---------------------------------------------
-	
+
 		if ($this->enable['category_fields'])
-		{	
+		{
 			$this->_process_custom_category_fields();
 		}
 
 		// ---------------------------------------------
 		//	Figure out which style to output, and move on.
 		// ---------------------------------------------
-	
+
 		// FOR DEBUGGING
 		// return $this->H->spit($this->category_data_q->result_array());
 
@@ -838,9 +838,9 @@ class Category_sorted_entries {
 
 		foreach($this->category_data_q->result() as $q_row)
 		{
-	
+
 			$return_string .= $this->_parse_cat_row($q_row->cat_id);
-	
+
 		}
 
 		// ---------------------------------------------
@@ -850,7 +850,7 @@ class Category_sorted_entries {
 		if ($this->params['backspace'])
 		{
 			$b = (int)$this->EE->params['backspace'];
-	
+
 			$return_string = substr($return_string, 0, - $b);
 		}
 
@@ -887,7 +887,7 @@ class Category_sorted_entries {
 				. $this->params['container_tag']
 				. ( $root_id != "" ? ' id="'.$root_id.'"' : "" )
 				. ( $root_class != "" ? ' class="'.$root_class.'"' : "" )
-				. ">" ;	
+				. ">" ;
 		}
 
 		foreach (explode("|",$this->group_id) as $group_id)
@@ -899,11 +899,11 @@ class Category_sorted_entries {
 
 		if ($this->params['container_tag'] != "")
 		{
-			$return_string .= "\r" . "</" . $this->params['container_tag'] . ">" ;	
+			$return_string .= "\r" . "</" . $this->params['container_tag'] . ">" ;
 		}
 
 		return $return_string;
-	
+
 	} // END _nested()
 
 
@@ -923,7 +923,7 @@ class Category_sorted_entries {
 	*/
 	private function _parse_cat_tree($group=0, $parent=0, $depth=0)
 	{
-	
+
 		$return_string = "";
 
 		$has_contents = FALSE;
@@ -951,39 +951,39 @@ class Category_sorted_entries {
 
 		foreach ($this->category_data_q->result() as $q_row)
 		{
-	
+
 			if ($q_row->group_id == $group && $q_row->parent_id == $parent)
 			{
-		
+
 				$has_contents = TRUE;
-		
+
 				// Open item
-		
+
 				if ($this->params['item_tag'] != "")
 				{
 					$return_string .= $nl_i . "<" . $this->params['item_tag'] . ( $this->params['item_class'] ? ' class="'.$this->params['item_class'].'">' : ">" );
 				}
-		
+
 				// Include contents for this node
-		
+
 				$return_string .= $this->_parse_cat_row($q_row->cat_id);
-		
+
 				// Include subtree contents, if subtree has contents
-		
+
 				$subtree = $this->_parse_cat_tree($group, $q_row->cat_id, $depth+2);
-		
+
 				if (!$subtree['contents_is_empty'])
 				{
 					$return_string .= $subtree['contents'];
 				}
-	
+
 				// Close item
-		
+
 				if ($this->params['item_tag'] != "")
 				{
 					$return_string .= $nl_i . "</" . $this->params['item_tag'] . ">";
 				}
-		
+
 			}
 
 		}
@@ -1005,7 +1005,7 @@ class Category_sorted_entries {
 			'contents_is_empty' => !$has_contents,
 			'contents' => $return_string
 		);
-	
+
 	} // END _parse_cat_tree
 
 
@@ -1064,7 +1064,7 @@ class Category_sorted_entries {
 		return $this->EE->TMPL->parse_variables($this->EE->TMPL->tagdata, $variables);
 
 	} // END _parse_cat_row()
-	
+
 
 	/**
 	* ==============================================
@@ -1090,7 +1090,7 @@ class Category_sorted_entries {
 
 		// ---------------------------------------------
 		//	Make sure there are results before we try to process them...
-		// ---------------------------------------------	
+		// ---------------------------------------------
 
 		if ($this->category_fields_info_q->num_rows() < 1)
 		{
@@ -1100,35 +1100,35 @@ class Category_sorted_entries {
 
 		// ---------------------------------------------
 		//	Iterate over the category_data_a, processing/replacing custom fields
-		// ---------------------------------------------	
+		// ---------------------------------------------
 
 		foreach ($this->category_fields_info_q->result() as $field)
 		{
-	
+
 			foreach($this->category_data_a as $key => $data_row)
 			{
-		
+
 				if ( isset($data_row[ 'field_id_'.$field->field_id ]) )
 				{
-			
+
 					$this->category_data_a[$key]["".$field->field_name] = array();
-			
+
 					$this->category_data_a[$key][ $field->field_name ][] = $data_row[ 'field_id_'.$field->field_id ];
-			
+
 					$this->category_data_a[$key][ $field->field_name ][] = array(
 						'text_format'		=> $data_row['field_ft_'.$field->field_id],
 						'html_format'		=> $data_row['field_html_formatting'],
 						'auto_links'		=> 'n',
 						'allow_img_url'	=> 'y'
 					);
-			
+
 				}
-		
+
 				else
 				{
 					$this->category_data_a[$key]["".$field->field_name] = "";
 				}
-		
+
 			}
 
 		}
@@ -1177,8 +1177,8 @@ class Category_sorted_entries {
 		}
 	}
 
-	
-		
+
+
 	/**
 	* ==============================================
 	* Include parents
@@ -1192,10 +1192,10 @@ class Category_sorted_entries {
 	*/
 	function usage()
 	{
-	
+
 		ob_start(); 
 		?>
-	
+
 		This plugin behaves like the standard Category Archive Tag:
 
 		http://expressionengine.com/user_guide/modules/channel/category_archive.html
@@ -1218,12 +1218,12 @@ class Category_sorted_entries {
 		This plugin is compatible with NSM Addon Updater:
 
 		http://github.com/newism/nsm.addon_updater.ee_addon
-	
+
 		<?php
 		$buffer = ob_get_contents();
 
 		ob_end_clean(); 
-	
+
 		return $buffer;
 
 	} // END usage()
