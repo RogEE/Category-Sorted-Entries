@@ -576,6 +576,44 @@ class Category_sorted_entries {
      	}
 
 		// ---------------------------------------------
+		//	Some entry variables will get nuked in a moment, for security, or just because they don't belong.
+		// ---------------------------------------------
+
+		$tags_to_unset = array_fill_keys(
+			array(
+				'cat_id',
+				'password',
+				'unique_id',
+				'crypt_key',
+				'authcode',
+				'ignore_list',
+				'private_messages',
+				'accept_messages',
+				'last_view_bulletins',
+				'last_bulletin_date',
+				'accept_admin_email',
+				'accept_user_email',
+				'notify_by_default',
+				'notify_of_pm',
+				'display_avatars',
+				'display_signatures',
+				'parse_smileys',
+				'smart_notifications',
+				'cp_theme',
+				'profile_theme',
+				'forum_theme',
+				'tracker',
+				'template_size',
+				'notepad',
+				'notepad_size',
+				'quick_links',
+				'quick_tabs',
+				'show_sidebar',
+				'pmember_id',
+				'profile_views'
+			), "");
+
+		// ---------------------------------------------
 		//	Process the results into the entry_data_a and entries_by_category_a arrays
 		// ---------------------------------------------
 
@@ -583,10 +621,11 @@ class Category_sorted_entries {
 		{
 
 			// Add entry data to entry_data_a (but only once per entry_id).
+			// As we do so, unset the keys we specified earlier.
 
      		if ( ! isset($this->entry_data_a[ $q_row['entry_id'] ]) )
      		{
-     			$this->entry_data_a[$q_row['entry_id']] = $q_row;
+     			$this->entry_data_a[$q_row['entry_id']] = array_diff_key($q_row, $tags_to_unset);
      		}
      
      		// If this cat_id hasn't been added to entries_by_category_a yet, initialize an array there.
@@ -620,7 +659,7 @@ class Category_sorted_entries {
 		// ---------------------------------------------
 
 		// FOR DEBUGGING
-		// return $this->H->spit($this->entry_data_q->result_array()) . $this->H->spit($this->entries_by_category_a);
+		// return $this->H->spit($this->entry_data_a) . $this->H->spit($this->entries_by_category_a);
 
 		return $this->_categories();
 
