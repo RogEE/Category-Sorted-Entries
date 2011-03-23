@@ -6,7 +6,7 @@
 RogEE "Category Sorted Entries"
 a plug-in for ExpressionEngine 2
 by Michael Rog
-version 2.b.0
+version 2.0.0
 
 Please e-mail me with questions, feedback, suggestions, bugs, etc.
 >> michael@michaelrog.com
@@ -819,7 +819,7 @@ class Category_sorted_entries {
 		// ---------------------------------------------
 
 		// FOR DEBUGGING
-		// return $this->H->spit($this->category_data_q->result_array());
+		// return $this->H->spit($this->category_data_a);
 
 		switch ($this->params['style']) {
 			case "linear":

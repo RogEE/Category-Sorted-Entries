@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:ee_addon="http://ee-garage.com/nsm_addon_updater">
+  <channel>
+    <title>RogEE Category Sorted Entries changelog</title>
+    <link>http://code.michaelrog.com/category_sorted_entries/raw/tip/versions.xml</link>
+    <description>Changes and updates to Michael Rog's Category Sorted Entries plug-in: http://michaelrog.com/ee/category-sorted-entries</description>
+    <item>
+      <title>Version 2.0.0</title>
+      <!-- Additional tag required for NSM Addon Updater -->
+      <ee_addon:version>2.0.0</ee_addon:version>
+      <link>http://michaelrog.com/ee/category-sorted-entries</link>
+      <pubDate>Wed, 23 Mar 2011 11:11:00 +0600</pubDate>
+      <description><![CDATA[
+        <ul>
+          <li>Version 1 is now <a href="http://michaelrog.com/ee/category-sorted-entries-lite">Category Sorted Entries Lite</a>, available for free at Devot:ee.</li>
+          <li>Version 2 features more parameters, more variables, Custom Channel Fields, faster processing, and much cleaner code.</li>
+          <li>2.0.0 is a PUBLIC BETA release.</li>
+          <li>Available for <a href="http://devot-ee.com/add-ons/category-sorted-entries/">purchase/download</a> at Devot:ee.</a>
+        </ul>
+      ]]></description>
+    </item>
+  </channel>
+</rss>
