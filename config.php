@@ -18,8 +18,8 @@ if ( ! defined('ROGEE_CSE_VERSION') )
 
 $config['name'] = ROGEE_CSE_NAME;
 $config['version'] = ROGEE_CSE_VERSION;
-$config['nsm_addon_updater']['versions_xml'] = 'http://code.michaelrog.com/category_sorted_entries/raw/tip/versions.xml';
+$config['nsm_addon_updater']['versions_xml'] = 'http://michaelrog.com/ee/versions/category_sorted_entries';
 
-    
+   
 /* End of file config.php */
 /* Location: ./system/expressionengine/third_party/reg_restrict/config.php */

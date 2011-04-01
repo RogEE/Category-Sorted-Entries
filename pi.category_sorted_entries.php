@@ -13,7 +13,10 @@ Please e-mail me with questions, feedback, suggestions, bugs, etc.
 >> http://michaelrog.com/ee
 
 This plugin is compatible with NSM Addon Updater:
->> http://github.com/newism/nsm.addon_updater.ee_addon
+>> http://ee-garage.com/nsm-addon-updater
+
+Changelog feed:
+>> http://michaelrog.com/ee/versions/category-sorted-entries
 
 =====================================================
 
@@ -1290,7 +1293,7 @@ class Category_sorted_entries {
 
 		This plugin is compatible with NSM Addon Updater:
 
-		http://github.com/newism/nsm.addon_updater.ee_addon
+		http://ee-garage.com/nsm-addon-updater
 
 		<?php
 		$buffer = ob_get_contents();
