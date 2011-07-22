@@ -6,7 +6,7 @@
 RogEE "Category Sorted Entries"
 a plug-in for ExpressionEngine 2
 by Michael Rog
-version 2.0.0
+version 2.1.0
 
 Please e-mail me with questions, feedback, suggestions, bugs, etc.
 >> michael@michaelrog.com
@@ -745,7 +745,7 @@ class Category_sorted_entries {
 		$select_sql = 'DISTINCT (c.cat_id), c.cat_name, c.cat_url_title, c.cat_description, c.cat_image, c.group_id, c.parent_id' 
 			. ( $this->enable['category_fields'] ? ", cg.field_html_formatting, fd.*" : "" );
 
-		$this->EE->db->select($select_sql)
+		$this->EE->db->select($select_sql, FALSE)
 			->from('categories c');
 
 		if ($this->enable['category_fields'])
