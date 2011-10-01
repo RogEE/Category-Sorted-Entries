@@ -6,7 +6,7 @@
 RogEE "Category Sorted Entries"
 a plug-in for ExpressionEngine 2
 by Michael Rog
-version 2.1.0
+version 2.1.1
 
 Please e-mail me with questions, feedback, suggestions, bugs, etc.
 >> michael@michaelrog.com
@@ -408,7 +408,7 @@ class Category_sorted_entries {
 			//	Get a list of all the entries that match the param.
 			// ---------------------------------------------
 
-			$this->EE->db->select('DISTINCT entry_id')
+			$this->EE->db->select('DISTINCT entry_id', FALSE)
 				->from('category_posts')
 				->where_in('cat_id', $ids);
 
