@@ -6,7 +6,7 @@
 RogEE "Category Sorted Entries"
 a plug-in for ExpressionEngine 2
 by Michael Rog
-version 2.2.0
+version 2.3.0
 
 Please e-mail me with questions, feedback, suggestions, bugs, etc.
 >> michael@michaelrog.com
