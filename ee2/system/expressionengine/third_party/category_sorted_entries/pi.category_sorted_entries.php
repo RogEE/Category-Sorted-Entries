@@ -6,7 +6,7 @@
 RogEE "Category Sorted Entries"
 a plug-in for ExpressionEngine 2
 by Michael Rog
-version 2.1.1
+version 2.2.0
 
 Please e-mail me with questions, feedback, suggestions, bugs, etc.
 >> michael@michaelrog.com
@@ -173,8 +173,8 @@ class Category_sorted_entries {
 
 	// Important numbers
 
-	var $group_id;
-	var $channel_id;
+	var $group_ids = array();
+	var $channel_ids = array();
 
 	// For making category data query efficient despite show_empty
 
@@ -321,24 +321,37 @@ class Category_sorted_entries {
 			->where('site_id', $this->params['site_id']);
 
 		if ($this->params['channel']){
-			$this->EE->db->where('channel_name', $this->params['channel']);
+			
+			// $this->EE->db->where('channel_name', $this->params['channel']);
+			
+			list($channels_arr, $channels_in) = $this->H->explode_list_param($this->params['channel']);
+			$method = $in ? 'where_in' : 'where_not_in';
+			$this->EE->db->$method('channel_name', $channels_arr);
+			
 		}
 
 		$cat_group_q = $this->EE->db->get();
 
-		if ($cat_group_q->num_rows() != 1)
+		if ($cat_group_q->num_rows() == 0)
 		{
 			$this->H->log("No results -- No category groups assigned to the specified channel");
 			return $this->EE->TMPL->no_results();
 		}
+		else
+		{	
+			
+			foreach ($cat_group_q->result() as $row)
+			{
+				$this->channel_ids[] = $row->channel_id;
+				$this->group_ids = array_merge($this->group_ids, explode('|', $row->cat_group))
+			}
+			
+		}
 
-		$this->channel_id = $cat_group_q->row('channel_id');
-		$this->group_id = $cat_group_q->row('cat_group');
+
 
 		if ($this->params['display_by_group'] !== FALSE)
 		{
-
-			$group_ids = explode('|', $this->group_id);
 
 			list($ids, $in) = $this->H->explode_list_param($this->params['display_by_group']);
 
@@ -346,13 +359,10 @@ class Category_sorted_entries {
 			$method = $in ? 'array_intersect' : 'array_diff';
 
 			// Alter group_ids
-			$group_ids = $method($group_ids, $ids);
-
-			// Replace with new group_id list
-			$this->group_id = implode("|", $group_ids);
+			$this->group_ids = $method($this->group_ids, $ids);
 
 			// Clean up
-			unset($cat_group_q, $group_ids, $ids, $in);
+			unset($cat_group_q, $ids, $in);
 
 		}
 
@@ -360,7 +370,7 @@ class Category_sorted_entries {
 		//	Bail out if there are no groups to display
 		// ---------------------------------------------
 
-		if ($this->group_id == "")
+		if (empty($this->group_id))
 		{
 			$this->H->log("No results -- No category groups to display");
 			return $this->EE->TMPL->no_results();
@@ -459,7 +469,7 @@ class Category_sorted_entries {
 		// ---------------------------------------------
 
 		$this->EE->db->from('channel_titles channel_titles, category_posts category_posts')
-			->where('channel_titles.channel_id', $this->channel_id, FALSE)
+			->where_in('channel_titles.channel_id', $this->channel_ids, FALSE)
 			->where('channel_titles.entry_id = category_posts.entry_id', NULL, FALSE);
 
 		// Filter by chosen entry IDs
@@ -705,7 +715,7 @@ class Category_sorted_entries {
 
 				$this->EE->db->select('cat_id, parent_id')
 					->from('categories')
-					->where_in('group_id', explode("|", $this->group_id))
+					->where_in('group_id', $this->group_id)
 					->order_by('group_id ASC, parent_id ASC, cat_order ASC');
 
 				$category_parents_q = $this->EE->db->get();
@@ -761,7 +771,7 @@ class Category_sorted_entries {
 
 		// Only get categories from the groups we want to display.
 
-		$this->EE->db->where_in('c.group_id', explode("|", $this->group_id));
+		$this->EE->db->where_in('c.group_id', $this->group_ids);
 
 		// Filter by category IDs in "show" param.
 
@@ -910,7 +920,7 @@ class Category_sorted_entries {
 				. ">" ;
 		}
 
-		foreach (explode("|",$this->group_id) as $group_id)
+		foreach ($this->group_ids as $group_id)
 		{
 			$parsed_tree = $this->_parse_cat_tree($group_id,0,0);
 			$return_string .= $parsed_tree['contents'];
@@ -1104,7 +1114,7 @@ class Category_sorted_entries {
 		$this->EE->db->select('field_id, field_name')
 			->from('category_fields')
 			->where('site_id', $this->params['site_id'])
-			->where_in('group_id', explode("|",$this->group_id));
+			->where_in('group_id', $this->group_ids);
 
 		$category_fields_info_q = $this->EE->db->get();
 
@@ -1175,7 +1185,7 @@ class Category_sorted_entries {
 
 		$this->EE->db->select('field_id, field_name, channels.channel_html_formatting')
 			->from('channel_fields channel_fields, channels channels')
-			->where('channel_id', $this->channel_id)
+			->where_in('channel_id', $this->channel_ids)
 			->where('channels.field_group = channel_fields.group_id', NULL, FALSE);
 			
 		$channel_fields_info_q = $this->EE->db->get();
@@ -1281,13 +1291,16 @@ class Category_sorted_entries {
 
 		BUT, you also have some additional parameters to control the output:
 
-		group_id: Only categories in these groups are displayed.
+		display_by_group: Only categories in these groups are displayed.
 		entry_id: Only entries matching these IDs are returned.
 		category: Only entries assigned to these categories are returned.
 
 		AND, all of the default and Custom Channel Fields are available for use.
+		
+		(Custom field values are pulled straight from the database,
+		so advanced fieldtypes like Matrix or Playa may not work well.)
 
-		See http://michaelrog.com/ee/category-sorted-entries for detailed documentation.
+		See http://rog.ee/category_sorted_entries for detailed documentation.
 
 		---------------
 
