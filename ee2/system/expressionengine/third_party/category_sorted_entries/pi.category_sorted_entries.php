@@ -313,19 +313,17 @@ class Category_sorted_entries {
 	{
 
 		// ---------------------------------------------
-		//	Set category groups
+		//	Set category group_is and channel_ids
 		// ---------------------------------------------
 
-		$this->EE->db->select('DISTINCT cat_group, channel_id', FALSE)
+		$this->EE->db->select('cat_group, channel_id', FALSE)
 			->from('channels')
 			->where('site_id', $this->params['site_id']);
 
 		if ($this->params['channel']){
 			
-			// $this->EE->db->where('channel_name', $this->params['channel']);
-			
 			list($channels_arr, $channels_in) = $this->H->explode_list_param($this->params['channel']);
-			$method = $in ? 'where_in' : 'where_not_in';
+			$method = $channels_in ? 'where_in' : 'where_not_in';
 			$this->EE->db->$method('channel_name', $channels_arr);
 			
 		}
@@ -343,12 +341,18 @@ class Category_sorted_entries {
 			foreach ($cat_group_q->result() as $row)
 			{
 				$this->channel_ids[] = $row->channel_id;
-				$this->group_ids = array_merge($this->group_ids, explode('|', $row->cat_group))
+				$this->group_ids = array_merge($this->group_ids, explode('|', $row->cat_group));
 			}
 			
 		}
+		
+		// Filter out duplicate group_ids to prevent listing a category group more than once in the "nested" style.
+		$this->group_ids = array_unique($this->group_ids);
 
+		// Filtering out duplicate channel_ids should be unnecessary, but just for grins...
+		$this->channel_ids = array_unique($this->channel_ids);
 
+		// Now, if I have set display_by_group, I need to altar the group_ids list accordingly.
 
 		if ($this->params['display_by_group'] !== FALSE)
 		{
@@ -370,7 +374,7 @@ class Category_sorted_entries {
 		//	Bail out if there are no groups to display
 		// ---------------------------------------------
 
-		if (empty($this->group_id))
+		if (empty($this->group_ids))
 		{
 			$this->H->log("No results -- No category groups to display");
 			return $this->EE->TMPL->no_results();
@@ -715,7 +719,7 @@ class Category_sorted_entries {
 
 				$this->EE->db->select('cat_id, parent_id')
 					->from('categories')
-					->where_in('group_id', $this->group_id)
+					->where_in('group_id', $this->group_ids)
 					->order_by('group_id ASC, parent_id ASC, cat_order ASC');
 
 				$category_parents_q = $this->EE->db->get();
