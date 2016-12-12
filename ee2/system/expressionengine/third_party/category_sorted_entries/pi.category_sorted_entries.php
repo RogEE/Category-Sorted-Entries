@@ -1281,7 +1281,7 @@ class Category_sorted_entries {
 	* @access public
 	* @return string output buffer
 	*/
-	function usage()
+	public static function usage()
 	{
 
 		ob_start(); 
