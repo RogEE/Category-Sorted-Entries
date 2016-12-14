@@ -12,7 +12,7 @@
 if ( ! defined('ROGEE_CSE_VERSION') )
 {
 	define('ROGEE_CSE_NAME', 'RogEE Category Sorted Entires');
-	define('ROGEE_CSE_VERSION', '2.3.0');
+	define('ROGEE_CSE_VERSION', '2.3.1');
 	define('ROGEE_CSE_DOCS', 'http://rog.ee/category_sorted_entries');
 }
 
